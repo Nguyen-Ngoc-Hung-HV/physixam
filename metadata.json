@@ -1,0 +1,7 @@
+{
+  "name": "PhysiXam - Khảo thí Vật lí THPT Trực tuyến",
+  "description": "Nền tảng thi thử và kiểm tra trực tuyến môn Vật lí THPT toàn diện, hỗ trợ hiển thị công thức KaTeX, đồ thị vector SVG và chấm điểm tự động.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

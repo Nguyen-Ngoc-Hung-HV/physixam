@@ -1,0 +1,139 @@
+@import "tailwindcss";
+
+/* Chống bôi đen sao chép văn bản khi bật chế độ bảo vệ bài thi */
+.anti-cheat-protected {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+}
+
+.anti-cheat-protected * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+/* Thiết lập hiển thị khi in và xuất PDF */
+.print-only {
+  display: none;
+}
+
+@media print {
+  /* Ẩn tất cả các thành phần điều khiển giao diện web */
+  .no-print,
+  header,
+  footer,
+  aside,
+  button,
+  nav,
+  .no-print-area {
+    display: none !important;
+  }
+
+  /* Chuyển các khối fixed modal sang static để trình duyệt chia trang in (pagination) tự nhiên */
+  .fixed {
+    position: static !important;
+    background: none !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    width: 100% !important;
+    inset: auto !important;
+  }
+
+  .max-h-\[94vh\], 
+  .max-h-\[92vh\], 
+  .overflow-y-auto, 
+  .overflow-hidden {
+    max-height: none !important;
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  .shadow-2xl, .shadow-xl, .shadow-lg, .shadow-md, .shadow-xs, .shadow-sm {
+    box-shadow: none !important;
+  }
+
+  .rounded-3xl, .rounded-2xl, .rounded-xl {
+    border-radius: 0 !important;
+  }
+
+  /* Hiển thị các khối chuyên biệt cho bản in */
+  .print-only {
+    display: block !important;
+  }
+
+  body {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11pt !important;
+    line-height: 1.5 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Tránh ngắt trang giữa chừng bên trong câu hỏi hoặc sơ đồ */
+  .print-avoid-break,
+  .diagram-print-container {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Buộc ngắt trang */
+  .print-page-break {
+    break-before: page !important;
+    page-break-before: always !important;
+  }
+
+  /* Đảm bảo đồ thị SVG và hình ảnh hiển thị sắc nét không bị tràn lề hoặc bị ẩn */
+  svg {
+    max-width: 100% !important;
+    height: auto !important;
+    shape-rendering: geometricPrecision !important;
+    text-rendering: geometricPrecision !important;
+  }
+
+  .physics-svg-container,
+  .physics-svg-container svg {
+    display: block !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    max-width: 100% !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    background: transparent !important;
+  }
+
+  /* Đảm bảo đường vẽ nét chữ và trục toạ độ luôn tương phản cao, rõ ràng */
+  .physics-svg-container svg path,
+  .physics-svg-container svg line,
+  .physics-svg-container svg circle,
+  .physics-svg-container svg text {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  img {
+    max-width: 100% !important;
+    height: auto !important;
+    display: block !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
+
+  /* Công thức toán học KaTeX trong bản in */
+  .katex-display {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    margin: 0.5em 0 !important;
+  }
+
+  /* Tối ưu lề trang in chuẩn A4 */
+  @page {
+    size: A4 portrait;
+    margin: 1.2cm 1.0cm 1.2cm 1.0cm;
+  }
+}
