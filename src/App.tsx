@@ -34,7 +34,12 @@ import { ExamPackage, ExamAssignmentInfo } from './types/curriculum';
 import { getSavedExamPackages, saveExamPackagesToStorage } from './data/curriculumData';
 import { safeStorage } from './utils/safeStorage';
 import { decompressExamFromHash } from './utils/examShareUrl';
-
+import { 
+  syncSubmissionToCloud, 
+  fetchSubmissionsFromCloud, 
+  syncExamPackageToCloud, 
+  fetchExamPackagesFromCloud 
+} from './services/apiSync';
 export default function App() {
   // ĐỀ THI HIỆN TẠI (Được lưu bền vững trong safeStorage)
   const [exam, setExam] = useState<Exam>(() => getSavedCurrentExam(samplePhysicsExam));
@@ -114,7 +119,36 @@ export default function App() {
     isOpen: false,
     mode: 'exam_only',
   });
+// Tự động tải dữ liệu đề thi và bài nộp từ MongoDB Atlas khi mở ứng dụng
+  useEffect(() => {
+    async function loadCloudData() {
+      try {
+        const [cloudSubs, cloudPkgs] = await Promise.all([
+          fetchSubmissionsFromCloud(),
+          fetchExamPackagesFromCloud(),
+        ]);
 
+        if (cloudSubs && cloudSubs.length > 0) {
+          setSubmissions((prev: any[]) => {
+            const existingIds = new Set(prev.map((s: any) => s.id));
+            const newItems = cloudSubs.filter((s: any) => !existingIds.has(s.id));
+            return [...newItems, ...prev];
+          });
+        }
+
+        if (cloudPkgs && cloudPkgs.length > 0) {
+          setExamPackages((prev: any[]) => {
+            const existingIds = new Set(prev.map((p: any) => p.id));
+            const newItems = cloudPkgs.filter((p: any) => !existingIds.has(p.id));
+            return [...newItems, ...prev];
+          });
+        }
+      } catch (err) {
+        console.error('Lỗi nạp dữ liệu từ MongoDB Atlas:', err);
+      }
+    }
+    loadCloudData();
+  }, []);
   // Lưu danh sách bài nộp vào safeStorage
   useEffect(() => {
     try {
@@ -434,6 +468,8 @@ export default function App() {
     };
 
     setSubmissions((prev) => [newSubmission, ...prev]);
+    // Tự động lưu kết quả bài làm lên MongoDB Atlas
+    syncSubmissionToCloud(newSubmission);
 
     // Thoát toàn màn hình nếu đang bật
     if (document.fullscreenElement) {
