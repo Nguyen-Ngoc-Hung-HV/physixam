@@ -57,7 +57,7 @@ export default function App() {
     return [];
   });
 
-  // HỆ THỐNG HAI CHẾ ĐỘ (DUAL-MODE SYSTEM): MẶC ĐỊNH LÀ CHẾ ĐỘ GIÁO VIÊN
+  // HỆ THỐNG HAI CHẾ ĐỘ: MẶC ĐỊNH LÀ CHẾ ĐỘ GIÁO VIÊN
   const [appRole, setAppRole] = useState<'teacher' | 'student'>('teacher');
 
   // TRẠNG THÁI GIAO DIỆN GIÁO VIÊN: TRANG CHỦ PORTAL HOẶC WORKSPACE TẬP TRUNG THEO PANEL
@@ -65,7 +65,7 @@ export default function App() {
   const [currentPanel, setCurrentPanel] = useState<DashboardPanel>('panel1');
   const [initialSubtabIndex, setInitialSubtabIndex] = useState<number>(0);
 
-  // TÙY BIẾN HÌNH NỀN HỆ THỐNG (Lưu vĩnh viễn trong localStorage)
+  // TÙY BIẾN HÌNH NỀN HỆ THỐNG
   const [currentTheme, setCurrentTheme] = useState<BackgroundTheme>(() => getSavedTheme());
   const [isThemeModalOpen, setIsThemeModalOpen] = useState<boolean>(false);
 
@@ -209,14 +209,14 @@ export default function App() {
         if (!loadedExam && detectedAccessCode) {
           const cleanCode = detectedAccessCode.trim().toLowerCase();
           const foundInBank = examPackages.find(
-            (p) => p.code.toLowerCase() === cleanCode || p.id.toLowerCase() === cleanCode
+            (p: any) => p?.code?.toLowerCase() === cleanCode || p?.id?.toLowerCase() === cleanCode
           );
           if (foundInBank) {
             loadedExam = foundInBank.examData;
           } else {
-            const foundAssign = assignments.find((a) => a.accessCode.toLowerCase() === cleanCode);
+            const foundAssign = assignments.find((a: any) => a?.accessCode?.toLowerCase() === cleanCode);
             if (foundAssign) {
-              const matchedPkg = examPackages.find((p) => p.id === foundAssign.examId);
+              const matchedPkg = examPackages.find((p: any) => p?.id === foundAssign.examId);
               if (matchedPkg) loadedExam = matchedPkg.examData;
             }
           }
@@ -249,8 +249,8 @@ export default function App() {
   }, [examPackages, assignments]);
 
   const handleSaveExamPackage = (newPkg: ExamPackage) => {
-    setExamPackages((prev) => {
-      const idx = prev.findIndex((p) => p.id === newPkg.id);
+    setExamPackages((prev: any[]) => {
+      const idx = prev.findIndex((p: any) => p?.id === newPkg.id);
       let updated: ExamPackage[];
       if (idx >= 0) {
         updated = [...prev];
@@ -262,11 +262,12 @@ export default function App() {
       return updated;
     });
     showGlobalToast(`Đã lưu thành công đề thi '${newPkg.title}' vào Ngân hàng đề (Khối ${newPkg.grade})!`);
+    syncExamPackageToCloud(newPkg);
   };
 
   const handleDeleteExamPackage = (pkgId: string) => {
-    setExamPackages((prev) => {
-      const updated = prev.filter((p) => p.id !== pkgId);
+    setExamPackages((prev: any[]) => {
+      const updated = prev.filter((p: any) => p?.id !== pkgId);
       saveExamPackagesToStorage(updated);
       return updated;
     });
@@ -284,7 +285,7 @@ export default function App() {
   };
 
   const handleAssignExam = (pkg: ExamPackage, assignment: ExamAssignmentInfo, switchToStudent: boolean) => {
-    setAssignments((prev) => [assignment, ...prev.filter((a) => a.id !== assignment.id)]);
+    setAssignments((prev: any[]) => [assignment, ...prev.filter((a: any) => a?.id !== assignment.id)]);
     
     const newAntiCheat: AntiCheatConfig = {
       ...antiCheatConfig,
@@ -317,7 +318,7 @@ export default function App() {
   };
 
   const handleDeleteAssignment = (assignId: string) => {
-    setAssignments((prev) => prev.filter((a) => a.id !== assignId));
+    setAssignments((prev: any[]) => prev.filter((a: any) => a?.id !== assignId));
   };
 
   const handleOpenPrint = (printMode: PrintMode = 'exam_only') => {
@@ -521,7 +522,7 @@ export default function App() {
   const handleLoadExamByCode = (code: string): boolean => {
     const trimmed = code.trim().toLowerCase();
     const found = examPackages.find(
-      (p) => p.code.toLowerCase() === trimmed || p.id.toLowerCase() === trimmed
+      (p: any) => p?.code?.toLowerCase() === trimmed || p?.id?.toLowerCase() === trimmed
     );
     if (found) {
       setExam(found.examData);
@@ -535,10 +536,10 @@ export default function App() {
       return true;
     }
     const foundAssign = assignments.find(
-      (a) => a.accessCode.toLowerCase() === trimmed || a.examCode?.toLowerCase() === trimmed
+      (a: any) => a?.accessCode?.toLowerCase() === trimmed || a?.examCode?.toLowerCase() === trimmed
     );
     if (foundAssign) {
-      const pkg = examPackages.find((p) => p.id === foundAssign.examId);
+      const pkg = examPackages.find((p: any) => p?.id === foundAssign.examId);
       if (pkg) {
         setExam(pkg.examData);
         setTimeRemainingSeconds((pkg.examData.durationMinutes || 45) * 60);
@@ -657,9 +658,7 @@ export default function App() {
         }`}
       >
         
-        {/* ========================================================================= */}
         {/* 1. CHẾ ĐỘ GIÁO VIÊN / MÁY CHỦ: PORTAL TRANG CHỦ HOẶC WORKSPACE THEO PANEL */}
-        {/* ========================================================================= */}
         {appRole === 'teacher' && teacherView === 'portal' && (
           <HomepagePortal
             exam={exam}
@@ -705,12 +704,10 @@ export default function App() {
           />
         )}
 
-        {/* ========================================================================= */}
-        {/* 2. CHẾ ĐỘ HỌC SINH LÀM BÀI (STUDENT EXAMINATION VIEW)                     */}
-        {/* ========================================================================= */}
+        {/* 2. CHẾ ĐỘ HỌC SINH LÀM BÀI (STUDENT EXAMINATION VIEW) */}
         {appRole === 'student' && (
           <>
-            {/* Giai đoạn A: Thí sinh chuẩn bị vào phòng thi (Chưa bấm Bắt đầu) */}
+            {/* Giai đoạn A: Thí sinh chuẩn bị vào phòng thi */}
             {studentExamPhase === 'student_taking' && !hasStartedExam && (
               <StudentExamLaunch
                 exam={exam}
@@ -736,7 +733,6 @@ export default function App() {
             {/* Giai đoạn B: Thí sinh đang làm bài thi */}
             {studentExamPhase === 'student_taking' && hasStartedExam && (
               <div className="space-y-4">
-                {/* Thẻ định danh Thí sinh & Thủy ấn số bảo mật phòng thi */}
                 <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-2xl px-4 sm:px-5 py-2.5 text-white border border-indigo-500/30 shadow-md flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-sm" />
@@ -760,7 +756,6 @@ export default function App() {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start relative">
-                  {/* Cột trái: Bảng điều hướng câu hỏi */}
                   <div className="lg:col-span-4 xl:col-span-3 order-2 lg:order-1">
                     <QuestionPalette
                       exam={exam}
@@ -772,7 +767,6 @@ export default function App() {
                     />
                   </div>
 
-                  {/* Cột chính: Khối hiển thị câu hỏi, sơ đồ và phương án trả lời */}
                   <div className="lg:col-span-8 xl:col-span-9 order-1 lg:order-2 relative">
                     <div className="pointer-events-none select-none absolute inset-0 z-0 flex items-center justify-center opacity-[0.035] overflow-hidden">
                       <div className="text-center font-black text-4xl sm:text-6xl -rotate-12 tracking-wider text-slate-900 whitespace-nowrap">
