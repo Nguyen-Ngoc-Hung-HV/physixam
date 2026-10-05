@@ -23,6 +23,7 @@ import { BackgroundTheme, getSavedTheme, saveTheme } from './utils/themeStorage'
 import { StudentExamLaunch } from './components/StudentExamLaunch';
 import { TeacherManagementModal } from './components/TeacherManagementModal';
 import { SaveExamToBankModal } from './components/SaveExamToBankModal';
+import { ShareExamModal } from './components/ShareExamModal';
 import { FormulaSheetModal } from './components/FormulaSheetModal';
 import { ScientificCalculatorModal } from './components/ScientificCalculatorModal';
 import { PrintModal, PrintMode } from './components/PrintModal';
@@ -40,6 +41,7 @@ import {
   syncExamPackageToCloud, 
   fetchExamPackagesFromCloud 
 } from './services/apiSync';
+
 export default function App() {
   // ĐỀ THI HIỆN TẠI (Được lưu bền vững trong safeStorage)
   const [exam, setExam] = useState<Exam>(() => getSavedCurrentExam(samplePhysicsExam));
@@ -77,9 +79,9 @@ export default function App() {
     studentClass: string;
     candidateNumber: string;
   }>({
-    name: 'Thí sinh kiểm tra',
-    studentClass: '12A1',
-    candidateNumber: 'SBD-12001',
+    name: '',
+    studentClass: '',
+    candidateNumber: '',
   });
 
   // DANH SÁCH BÀI NỘP CỦA HỌC SINH (CHO PANEL 4 GIÁM SÁT & BẢNG ĐIỂM)
@@ -108,6 +110,7 @@ export default function App() {
   const [isCalculatorOpen, setIsCalculatorOpen] = useState<boolean>(false);
   const [isTeacherModalOpen, setIsTeacherModalOpen] = useState<boolean>(false);
   const [isSaveExamModalOpen, setIsSaveExamModalOpen] = useState<boolean>(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
   const [globalToastMessage, setGlobalToastMessage] = useState<string | null>(null);
 
   const showGlobalToast = (msg: string) => {
@@ -119,7 +122,8 @@ export default function App() {
     isOpen: false,
     mode: 'exam_only',
   });
-// Tự động tải dữ liệu đề thi và bài nộp từ MongoDB Atlas khi mở ứng dụng
+
+  // Tự động tải dữ liệu đề thi và bài nộp từ MongoDB Atlas khi mở ứng dụng
   useEffect(() => {
     async function loadCloudData() {
       try {
@@ -149,6 +153,7 @@ export default function App() {
     }
     loadCloudData();
   }, []);
+
   // Lưu danh sách bài nộp vào safeStorage
   useEffect(() => {
     try {
@@ -177,7 +182,6 @@ export default function App() {
         let loadedExam: Exam | null = null;
         let detectedAccessCode: string | null = null;
 
-        // A. Kiểm tra #exam=... hoặc ?exam=... (Nén LZ-String hoặc Base64 tự chứa toàn bộ đề)
         if (hash.includes('exam=')) {
           const rawHashPart = hash.split('exam=')[1]?.split('&')[0];
           if (rawHashPart) {
@@ -191,7 +195,6 @@ export default function App() {
           }
         }
 
-        // B. Kiểm tra #code=... hoặc ?code=...
         if (!loadedExam) {
           const codeMatch = hash.match(/code=([^&]+)/) || search.match(/code=([^&]+)/);
           if (codeMatch && codeMatch[1]) {
@@ -199,12 +202,10 @@ export default function App() {
           }
         }
 
-        // C. Kiểm tra #exam-PHY-... (mã chia sẻ liên kết cũ)
         if (!loadedExam && hash.startsWith('#exam-')) {
           detectedAccessCode = hash.substring(6);
         }
 
-        // Nếu có mã bài thi, tìm trong danh sách đề thi ngân hàng hoặc assignments
         if (!loadedExam && detectedAccessCode) {
           const cleanCode = detectedAccessCode.trim().toLowerCase();
           const foundInBank = examPackages.find(
@@ -221,7 +222,6 @@ export default function App() {
           }
         }
 
-        // Nếu tìm thấy hoặc giải nén thành công đề thi từ URL:
         if (loadedExam) {
           setExam(loadedExam);
           setTimeRemainingSeconds((loadedExam.durationMinutes || 45) * 60);
@@ -229,7 +229,6 @@ export default function App() {
           setFlaggedQuestionIds(new Set());
           setCurrentQuestionIndex(0);
           setEvaluation(null);
-          // Tự động chuyển thẳng sang Chế độ Học sinh làm bài (không cần đăng nhập, không cookie)
           setAppRole('student');
           setStudentExamPhase('student_taking');
           setHasStartedExam(false);
@@ -249,7 +248,6 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handleUrlHashOrQuery);
   }, [examPackages, assignments]);
 
-  // Lưu hoặc cập nhật gói đề thi trong ngân hàng
   const handleSaveExamPackage = (newPkg: ExamPackage) => {
     setExamPackages((prev) => {
       const idx = prev.findIndex((p) => p.id === newPkg.id);
@@ -266,7 +264,6 @@ export default function App() {
     showGlobalToast(`Đã lưu thành công đề thi '${newPkg.title}' vào Ngân hàng đề (Khối ${newPkg.grade})!`);
   };
 
-  // Xóa gói đề thi khỏi ngân hàng
   const handleDeleteExamPackage = (pkgId: string) => {
     setExamPackages((prev) => {
       const updated = prev.filter((p) => p.id !== pkgId);
@@ -276,7 +273,6 @@ export default function App() {
     showGlobalToast('Đã xóa đề thi khỏi Ngân hàng đề thành công!');
   };
 
-  // Chọn gói đề thi làm đề khảo thí hiện hành
   const handleSelectExamPackage = (pkg: ExamPackage) => {
     setExam(pkg.examData);
     setAnswers({});
@@ -287,11 +283,9 @@ export default function App() {
     setStudentExamPhase('student_taking');
   };
 
-  // Giao đề thi cho học sinh
   const handleAssignExam = (pkg: ExamPackage, assignment: ExamAssignmentInfo, switchToStudent: boolean) => {
     setAssignments((prev) => [assignment, ...prev.filter((a) => a.id !== assignment.id)]);
     
-    // Cập nhật cấu hình giám sát thi
     const newAntiCheat: AntiCheatConfig = {
       ...antiCheatConfig,
       enabled: assignment.antiCheatEnabled,
@@ -302,7 +296,6 @@ export default function App() {
     setAntiCheatConfig(newAntiCheat);
     setAuditLog(createInitialAuditLog(newAntiCheat));
 
-    // Nạp đề thi vào hệ thống
     setExam(pkg.examData);
     setAnswers({});
     setFlaggedQuestionIds(new Set());
@@ -310,7 +303,6 @@ export default function App() {
     setTimeRemainingSeconds(pkg.examData.durationMinutes * 60);
     setEvaluation(null);
 
-    // Cập nhật thông tin thí sinh
     setCandidateInfo((prev) => ({
       ...prev,
       studentClass: assignment.className,
@@ -324,7 +316,6 @@ export default function App() {
     }
   };
 
-  // Xóa bài thi đã giao
   const handleDeleteAssignment = (assignId: string) => {
     setAssignments((prev) => prev.filter((a) => a.id !== assignId));
   };
@@ -336,7 +327,6 @@ export default function App() {
     });
   };
 
-  // Đổi mã đề thi
   const handleSelectExamCode = (code: string) => {
     if (!bundle) {
       setExam((prev) => ({ ...prev, code }));
@@ -354,7 +344,6 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Áp dụng bộ mã đề mới từ Quản lý đề thi / Trộn đề
   const handleApplyBundle = (newBundle: ExamVariantBundle) => {
     setBundle(newBundle);
     if (newBundle.variants.length > 0) {
@@ -369,7 +358,6 @@ export default function App() {
     }
   };
 
-  // Mở hộp thoại in ma trận đáp án
   const handleOpenPrintMatrix = (targetBundle: ExamVariantBundle) => {
     setBundle(targetBundle);
     setPrintConfig({
@@ -378,7 +366,6 @@ export default function App() {
     });
   };
 
-  // Đồng hồ đếm ngược: CHỈ CHẠY KHI ĐANG Ở CHẾ ĐỘ HỌC SINH VÀ ĐÃ BẤM BẮT ĐẦU
   useEffect(() => {
     if (appRole !== 'student' || studentExamPhase !== 'student_taking' || isPaused || !hasStartedExam) {
       return;
@@ -398,7 +385,6 @@ export default function App() {
     return () => clearInterval(timer);
   }, [appRole, studentExamPhase, isPaused, hasStartedExam, exam, answers, auditLog]);
 
-  // Xử lý thay đổi câu trả lời
   const handleAnswerChange = (questionId: string, answer: any) => {
     setAnswers((prev) => ({
       ...prev,
@@ -406,7 +392,6 @@ export default function App() {
     }));
   };
 
-  // Đánh dấu xem lại
   const handleToggleFlag = (questionId: string) => {
     setFlaggedQuestionIds((prev) => {
       const next = new Set(prev);
@@ -419,7 +404,6 @@ export default function App() {
     });
   };
 
-  // Ghi nhận vi phạm từ bộ giám sát thi
   const handleRecordViolation = (event: ViolationEvent) => {
     setAuditLog((prev) => ({
       ...prev,
@@ -429,14 +413,12 @@ export default function App() {
     }));
   };
 
-  // Nộp bài và chấm điểm tự động
   const handleSubmitExam = (
     reason: 'student_submitted' | 'violation_limit_exceeded' | 'time_expired' = 'student_submitted'
   ) => {
     const timeSpent = Math.max(0, exam.durationMinutes * 60 - timeRemainingSeconds);
     const result = evaluateExam(exam, answers, timeSpent);
     
-    // Đính kèm nhật ký giám sát vào kết quả bài thi
     const finalAuditLog = {
       ...auditLog,
       submissionReason: reason,
@@ -446,7 +428,6 @@ export default function App() {
     setEvaluation(result);
     setStudentExamPhase('student_results');
 
-    // Lưu bài nộp vào danh sách để giáo viên quản lý ở Panel 4
     const currentCodeStr: string = exam.code || (bundle && bundle.variants[0]?.code) || '101';
     const newSubmission: StudentSubmission = {
       id: `sub-${Date.now()}`,
@@ -468,10 +449,8 @@ export default function App() {
     };
 
     setSubmissions((prev) => [newSubmission, ...prev]);
-    // Tự động lưu kết quả bài làm lên MongoDB Atlas
     syncSubmissionToCloud(newSubmission);
 
-    // Thoát toàn màn hình nếu đang bật
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
     }
@@ -479,7 +458,6 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Bắt đầu làm bài thi từ màn hình chuẩn bị
   const handleStartExam = (info: { name: string; studentClass: string; candidateNumber: string }) => {
     setCandidateInfo(info);
     setHasStartedExam(true);
@@ -492,7 +470,6 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Làm lại bài thi
   const handleRetake = () => {
     setAnswers({});
     setFlaggedQuestionIds(new Set());
@@ -505,7 +482,6 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Thoát ra Chế độ Giáo viên một cách an toàn và dứt khoát
   const handleExitToTeacherMode = () => {
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
@@ -514,21 +490,18 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Chuyển sang xem trước đề với tư cách Học sinh (1-click)
   const handlePreviewAsStudent = () => {
     setAppRole('student');
     setStudentExamPhase('student_taking');
-    setHasStartedExam(false); // Đưa về màn hình chuẩn bị sẵn sàng làm bài
+    setHasStartedExam(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Cập nhật cấu hình chống gian lận
   const handleChangeAntiCheatConfig = (newConfig: AntiCheatConfig) => {
     setAntiCheatConfig(newConfig);
     setAuditLog(createInitialAuditLog(newConfig));
   };
 
-  // Cập nhật đề thi mới
   const handleUpdateExam = (newExam: Exam) => {
     setExam(newExam);
     saveCurrentExam(newExam);
@@ -541,12 +514,10 @@ export default function App() {
     setHasStartedExam(false);
   };
 
-  // Cập nhật hoặc gỡ bỏ hình vẽ / sơ đồ cho một câu hỏi cụ thể (lưu bền vững)
   const handleUpdateQuestionDiagram = (questionId: string, diagram: DiagramData | null) => {
     setExam((prev) => updateQuestionDiagramInExam(prev, questionId, diagram));
   };
 
-  // Nạp đề thi cho học sinh theo mã bài thi rút gọn
   const handleLoadExamByCode = (code: string): boolean => {
     const trimmed = code.trim().toLowerCase();
     const found = examPackages.find(
@@ -583,7 +554,6 @@ export default function App() {
     return false;
   };
 
-  // Nạp đề thi tùy chỉnh do học sinh dán trực tiếp (JSON hoặc URL #exam=...)
   const handleLoadCustomExamFromStudent = (customExam: Exam) => {
     setExam(customExam);
     setTimeRemainingSeconds((customExam.durationMinutes || 45) * 60);
@@ -595,7 +565,6 @@ export default function App() {
     showGlobalToast(`Đã nạp đề thi "${customExam.title}" thành công!`);
   };
 
-  // TÙY BIẾN HÌNH NỀN VÀ ĐIỀU HƯỚNG PANEL
   const handleSelectTheme = (newTheme: BackgroundTheme) => {
     setCurrentTheme(newTheme);
     saveTheme(newTheme);
@@ -628,7 +597,7 @@ export default function App() {
       style={currentTheme.type === 'custom' ? currentTheme.style : undefined}
     >
       
-      {/* THANH ĐIỀU HƯỚNG ĐẦU TRANG CÓ BỘ CHUYỂN ĐỔI VAI TRÒ */}
+      {/* THANH ĐIỀU HƯỚNG ĐẦU TRANG */}
       <ExamHeader
         exam={exam}
         answers={answers}
@@ -640,6 +609,7 @@ export default function App() {
         onOpenTeacherManagement={() => setIsTeacherModalOpen(true)}
         onOpenPrint={() => handleOpenPrint('exam_only')}
         onOpenSaveToBank={() => setIsSaveExamModalOpen(true)}
+        onOpenShareExam={() => setIsShareModalOpen(true)}
         activeCode={activeExamCode}
         availableCodes={availableCodesList}
         onSelectCode={handleSelectExamCode}
@@ -664,7 +634,7 @@ export default function App() {
       {/* BỘ GIÁM SÁT THI & CHỐNG GIAN LẬN: CHỈ KÍCH HOẠT KHI Ở CHẾ ĐỘ HỌC SINH ĐANG LÀM BÀI */}
       <AntiCheatMonitor
         config={antiCheatConfig}
-        isActive={appRole === 'student' && studentExamPhase === 'student_taking'}
+        isActive={appRole === 'student' && studentExamPhase === 'student_taking' && hasStartedExam}
         hasStarted={hasStartedExam}
         onStartExamFullscreen={() => setHasStartedExam(true)}
         onExitToTeacherMode={handleExitToTeacherMode}
@@ -804,7 +774,6 @@ export default function App() {
 
                   {/* Cột chính: Khối hiển thị câu hỏi, sơ đồ và phương án trả lời */}
                   <div className="lg:col-span-8 xl:col-span-9 order-1 lg:order-2 relative">
-                    {/* Chìm mờ thủy ấn (Watermark) trên bài thi học sinh */}
                     <div className="pointer-events-none select-none absolute inset-0 z-0 flex items-center justify-center opacity-[0.035] overflow-hidden">
                       <div className="text-center font-black text-4xl sm:text-6xl -rotate-12 tracking-wider text-slate-900 whitespace-nowrap">
                         {candidateInfo.name} • {candidateInfo.studentClass} • {candidateInfo.candidateNumber}
@@ -869,6 +838,14 @@ export default function App() {
           onSaveExamToBank={handleSaveExamPackage}
         />
       )}
+
+      {/* HỘP THOẠI CHIA SẺ ĐỀ THI, MÃ PHÒNG VÀ QR CODE */}
+      <ShareExamModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        examTitle={exam.title}
+        roomCode={activeExamCode}
+      />
 
       {/* Toast thông báo toàn cục */}
       {globalToastMessage && (

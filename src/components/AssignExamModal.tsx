@@ -60,10 +60,13 @@ export const AssignExamModal: React.FC<AssignExamModalProps> = ({
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
   const [isGeneratingQr, setIsGeneratingQr] = useState<boolean>(false);
 
-  // 1. Tạo Link làm bài trực tiếp cho học sinh (Tự chứa toàn bộ dữ liệu đề thi, không cần cookie/server session)
+// 1. Tạo Link làm bài trực tiếp rút gọn theo Mã đề / Mã phòng (không nén cồng kềnh, QR siêu nét)
   const studentDirectLink = useMemo(() => {
-    return generateStudentShareUrl(examPackage.examData);
-  }, [examPackage]);
+    const code = accessCode || examPackage.code || '101';
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
+    return `${origin}${pathname}#code=${code}`;
+  }, [accessCode, examPackage]);
 
   // Sinh mã QR khi mở hộp thoại
   useEffect(() => {
@@ -77,15 +80,15 @@ export const AssignExamModal: React.FC<AssignExamModalProps> = ({
         }
       })
       .catch((err) => {
-        console.warn('Lỗi tạo mã QR:', err);
-        if (isMounted) setIsGeneratingQr(false);
+        console.error('Lỗi tạo QR:', err);
+        if (isMounted) {
+          setIsGeneratingQr(false);
+        }
       });
-
-    return () => {
+return () => {
       isMounted = false;
     };
   }, [studentDirectLink]);
-
   const handleCopyCode = () => {
     navigator.clipboard.writeText(accessCode);
     setIsCopiedCode(true);

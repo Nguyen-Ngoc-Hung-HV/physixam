@@ -20,6 +20,7 @@ interface ExamHeaderProps {
   onOpenTeacherManagement: () => void;
   onOpenPrint: () => void;
   onOpenSaveToBank?: () => void;
+  onOpenShareExam?: () => void;
   activeCode?: string;
   availableCodes?: string[];
   onSelectCode?: (code: string) => void;
@@ -45,6 +46,7 @@ export const ExamHeader: React.FC<ExamHeaderProps> = ({
   onOpenTeacherManagement,
   onOpenPrint,
   onOpenSaveToBank,
+  onOpenShareExam,
   activeCode,
   availableCodes,
   onSelectCode,
@@ -269,6 +271,17 @@ export const ExamHeader: React.FC<ExamHeaderProps> = ({
                     <span>Lưu đề</span>
                   </button>
                 )}
+                {onOpenShareExam && (
+            <button
+              type="button"
+              onClick={onOpenShareExam}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 shadow-sm transition"
+              title="Chia sẻ mã phòng và mã QR cho học sinh"
+            >
+              <span>📱</span>
+              <span>Chia sẻ đề & QR</span>
+            </button>
+          )}
 
                 {onOpenTeacherManagement && (
                   <button
