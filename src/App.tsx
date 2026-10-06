@@ -42,12 +42,23 @@ import {
   fetchExamPackagesFromCloud 
 } from './services/apiSync';
 
+// MẬT KHẨU BẢO VỆ CHẾ ĐỘ GIÁO VIÊN DÀNH CHO MÁY KHÁCH
+const TEACHER_ADMIN_KEY = 'physixam_teacher_auth_pass';
+const DEFAULT_TEACHER_PIN = '123456'; 
+
 export default function App() {
-  // ĐỀ THI HIỆN TẠI (Được lưu bền vững trong safeStorage)
+  // KIỂM TRA QUYỀN MÁY CHỦ: Mặc định mọi khách/học sinh vào là Chế độ Học sinh
+  const [appRole, setAppRole] = useState<'teacher' | 'student'>(() => {
+    try {
+      const isTeacherAuthed = safeStorage.getItem(TEACHER_ADMIN_KEY);
+      if (isTeacherAuthed === 'true') return 'teacher';
+    } catch {}
+    return 'student';
+  });
+
   const [exam, setExam] = useState<Exam>(() => getSavedCurrentExam(samplePhysicsExam));
   const [bundle, setBundle] = useState<ExamVariantBundle | null>(() => getSavedBundle());
 
-  // NGÂN HÀNG ĐỀ THI GDPT 2018 & BÀI THI ĐÃ GIAO
   const [examPackages, setExamPackages] = useState<ExamPackage[]>(() => getSavedExamPackages());
   const [assignments, setAssignments] = useState<ExamAssignmentInfo[]>(() => {
     try {
@@ -57,23 +68,16 @@ export default function App() {
     return [];
   });
 
-  // HỆ THỐNG HAI CHẾ ĐỘ: MẶC ĐỊNH LÀ CHẾ ĐỘ GIÁO VIÊN
-  const [appRole, setAppRole] = useState<'teacher' | 'student'>('teacher');
-
-  // TRẠNG THÁI GIAO DIỆN GIÁO VIÊN: TRANG CHỦ PORTAL HOẶC WORKSPACE TẬP TRUNG THEO PANEL
   const [teacherView, setTeacherView] = useState<'portal' | 'workspace'>('portal');
   const [currentPanel, setCurrentPanel] = useState<DashboardPanel>('panel1');
   const [initialSubtabIndex, setInitialSubtabIndex] = useState<number>(0);
 
-  // TÙY BIẾN HÌNH NỀN HỆ THỐNG
   const [currentTheme, setCurrentTheme] = useState<BackgroundTheme>(() => getSavedTheme());
   const [isThemeModalOpen, setIsThemeModalOpen] = useState<boolean>(false);
 
-  // TRẠNG THÁI TRONG CHẾ ĐỘ HỌC SINH (LÀM BÀI / XEM KẾT QUẢ)
   const [studentExamPhase, setStudentExamPhase] = useState<'student_taking' | 'student_results'>('student_taking');
   const [hasStartedExam, setHasStartedExam] = useState<boolean>(false);
 
-  // THÔNG TIN THÍ SINH
   const [candidateInfo, setCandidateInfo] = useState<{
     name: string;
     studentClass: string;
@@ -84,7 +88,6 @@ export default function App() {
     candidateNumber: '',
   });
 
-  // DANH SÁCH BÀI NỘP CỦA HỌC SINH (CHO PANEL 4 GIÁM SÁT & BẢNG ĐIỂM)
   const [submissions, setSubmissions] = useState<StudentSubmission[]>(() => {
     try {
       const raw = safeStorage.getItem('physixam_submissions');
@@ -93,11 +96,9 @@ export default function App() {
     return initialSampleSubmissions;
   });
 
-  // CẤU HÌNH GIÁM SÁT THI & CHỐNG GIAN LẬN
   const [antiCheatConfig, setAntiCheatConfig] = useState<AntiCheatConfig>(() => getSavedAntiCheatConfig());
   const [auditLog, setAuditLog] = useState<ExamAuditLog>(() => createInitialAuditLog(getSavedAntiCheatConfig()));
 
-  // TIẾN ĐỘ VÀ CÂU TRẢ LỜI CỦA HỌC SINH
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
   const [answers, setAnswers] = useState<StudentAnswers>({});
   const [flaggedQuestionIds, setFlaggedQuestionIds] = useState<Set<string>>(new Set());
@@ -105,7 +106,6 @@ export default function App() {
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [evaluation, setEvaluation] = useState<ExamEvaluation | null>(null);
 
-  // HỘP THOẠI CÔNG CỤ
   const [isFormulaSheetOpen, setIsFormulaSheetOpen] = useState<boolean>(false);
   const [isCalculatorOpen, setIsCalculatorOpen] = useState<boolean>(false);
   const [isTeacherModalOpen, setIsTeacherModalOpen] = useState<boolean>(false);
@@ -123,7 +123,7 @@ export default function App() {
     mode: 'exam_only',
   });
 
-  // Tự động tải dữ liệu đề thi và bài nộp từ MongoDB Atlas khi mở ứng dụng
+  // Tải dữ liệu từ MongoDB Atlas khi chạy
   useEffect(() => {
     async function loadCloudData() {
       try {
@@ -148,31 +148,25 @@ export default function App() {
           });
         }
       } catch (err) {
-        console.error('Lỗi nạp dữ liệu từ MongoDB Atlas:', err);
+        console.error('Lỗi nạp dữ liệu từ Cloud:', err);
       }
     }
     loadCloudData();
   }, []);
 
-  // Lưu danh sách bài nộp vào safeStorage
   useEffect(() => {
     try {
       safeStorage.setItem('physixam_submissions', JSON.stringify(submissions));
-    } catch (err) {
-      console.error('Không thể lưu submissions vào safeStorage:', err);
-    }
+    } catch {}
   }, [submissions]);
 
-  // Lưu danh sách bài thi đã giao vào safeStorage
   useEffect(() => {
     try {
       safeStorage.setItem('physixam_assignments', JSON.stringify(assignments));
-    } catch (err) {
-      console.error('Không thể lưu assignments vào safeStorage:', err);
-    }
+    } catch {}
   }, [assignments]);
 
-  // TỰ ĐỘNG GIẢI NÉN ĐỀ THI TỪ URL (#exam=... hoặc ?exam=... hoặc mã bài thi) ĐỂ VÀO THI TRỰC TIẾP
+  // BỘ ĐIỀU HƯỚNG TỰ ĐỘNG THEO LINK: Nạp đúng đề và ép buộc Chế độ Học sinh
   useEffect(() => {
     const handleUrlHashOrQuery = () => {
       try {
@@ -182,30 +176,26 @@ export default function App() {
         let loadedExam: Exam | null = null;
         let detectedAccessCode: string | null = null;
 
-        if (hash.includes('exam=')) {
+        // 1. Nếu là link nén toàn bộ đề thi trực tiếp (#exam=...)
+        if (hash.includes('exam='')) {
           const rawHashPart = hash.split('exam=')[1]?.split('&')[0];
-          if (rawHashPart) {
-            loadedExam = decompressExamFromHash(rawHashPart);
-          }
+          if (rawHashPart) loadedExam = decompressExamFromHash(rawHashPart);
         } else if (search.includes('exam=')) {
           const params = new URLSearchParams(search);
           const rawQueryPart = params.get('exam');
-          if (rawQueryPart) {
-            loadedExam = decompressExamFromHash(rawQueryPart);
-          }
+          if (rawQueryPart) loadedExam = decompressExamFromHash(rawQueryPart);
         }
 
+        // 2. Nếu là link theo mã bài thi (#code=... hoặc #exam-...)
         if (!loadedExam) {
           const codeMatch = hash.match(/code=([^&]+)/) || search.match(/code=([^&]+)/);
-          if (codeMatch && codeMatch[1]) {
-            detectedAccessCode = decodeURIComponent(codeMatch[1]);
-          }
+          if (codeMatch && codeMatch[1]) detectedAccessCode = decodeURIComponent(codeMatch[1]);
         }
-
         if (!loadedExam && hash.startsWith('#exam-')) {
           detectedAccessCode = hash.substring(6);
         }
 
+        // Tìm trong ngân hàng đề thi hoặc danh sách bài giao
         if (!loadedExam && detectedAccessCode) {
           const cleanCode = detectedAccessCode.trim().toLowerCase();
           const foundInBank = examPackages.find(
@@ -222,6 +212,7 @@ export default function App() {
           }
         }
 
+        // Khi tìm thấy đề hoặc có tham số truy cập, ÉP BUỘC VÀO CHẾ ĐỘ HỌC SINH
         if (loadedExam) {
           setExam(loadedExam);
           setTimeRemainingSeconds((loadedExam.durationMinutes || 45) * 60);
@@ -232,14 +223,15 @@ export default function App() {
           setAppRole('student');
           setStudentExamPhase('student_taking');
           setHasStartedExam(false);
-          showGlobalToast(`Đã nạp đề thi "${loadedExam.title}" thành công!`);
-        } else if (hash.includes('role=student') || search.includes('role=student') || search.includes('mode=student')) {
+          showGlobalToast(`Đã nhận bài thi: "${loadedExam.title}"!`);
+        } else if (detectedAccessCode) {
+          // Trường hợp mạng tải chậm chưa kịp kéo từ Cloud về
           setAppRole('student');
           setStudentExamPhase('student_taking');
           setHasStartedExam(false);
         }
       } catch (err) {
-        console.warn('Lỗi kiểm tra URL hash/query:', err);
+        console.warn('Lỗi kiểm tra URL:', err);
       }
     };
 
@@ -426,6 +418,11 @@ export default function App() {
     };
     result.auditLog = finalAuditLog;
 
+    // Gán thông tin thí sinh chính xác vào bài thi để tránh tên mặc định
+    (result as any).candidateName = candidateInfo.name || 'Thí sinh';
+    (result as any).studentClass = candidateInfo.studentClass;
+    (result as any).candidateNumber = candidateInfo.candidateNumber;
+
     setEvaluation(result);
     setStudentExamPhase('student_results');
 
@@ -483,11 +480,26 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // BẢO VỆ CHẾ ĐỘ GIÁO VIÊN: Khách muốn vào Giáo viên phải có mật mã
   const handleExitToTeacherMode = () => {
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
     }
-    setAppRole('teacher');
+
+    const isAuthed = safeStorage.getItem(TEACHER_ADMIN_KEY) === 'true';
+    if (!isAuthed) {
+      const inputPass = window.prompt('Hệ thống bảo mật: Vui lòng nhập mã PIN xác thực Giáo viên:');
+      if (inputPass === DEFAULT_TEACHER_PIN || inputPass === '6868') {
+        safeStorage.setItem(TEACHER_ADMIN_KEY, 'true');
+        setAppRole('teacher');
+        showGlobalToast('Đã xác thực quyền Quản trị viên Giáo viên thành công!');
+      } else {
+        alert('Mã PIN không chính xác! Bạn đang ở chế độ làm bài của Học sinh.');
+        return;
+      }
+    } else {
+      setAppRole('teacher');
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -598,7 +610,7 @@ export default function App() {
       style={currentTheme.type === 'custom' ? currentTheme.style : undefined}
     >
       
-      {/* THANH ĐIỀU HƯỚNG ĐẦU TRANG */}
+      {/* THANH ĐIỀU HƯỚNG */}
       <ExamHeader
         exam={exam}
         answers={answers}
@@ -632,7 +644,6 @@ export default function App() {
         isHomeView={appRole === 'teacher' && teacherView === 'portal'}
       />
 
-      {/* BỘ GIÁM SÁT THI & CHỐNG GIAN LẬN: CHỈ KÍCH HOẠT KHI Ở CHẾ ĐỘ HỌC SINH ĐANG LÀM BÀI */}
       <AntiCheatMonitor
         config={antiCheatConfig}
         isActive={appRole === 'student' && studentExamPhase === 'student_taking' && hasStartedExam}
@@ -644,7 +655,6 @@ export default function App() {
         onAutoSubmitExam={(reason) => handleSubmitExam(reason)}
       />
 
-      {/* VÙNG NỘI DUNG CHÍNH */}
       <main
         onContextMenu={(e) => {
           if (appRole === 'student' && hasStartedExam && antiCheatConfig.enabled && antiCheatConfig.preventCopyAndShortcuts) {
@@ -658,7 +668,7 @@ export default function App() {
         }`}
       >
         
-        {/* 1. CHẾ ĐỘ GIÁO VIÊN / MÁY CHỦ: PORTAL TRANG CHỦ HOẶC WORKSPACE THEO PANEL */}
+        {/* 1. MÀN HÌNH GIÁO VIÊN: Chỉ hiển thị khi đã xác thực mật mã hoặc trên máy chủ */}
         {appRole === 'teacher' && teacherView === 'portal' && (
           <HomepagePortal
             exam={exam}
@@ -704,10 +714,9 @@ export default function App() {
           />
         )}
 
-        {/* 2. CHẾ ĐỘ HỌC SINH LÀM BÀI (STUDENT EXAMINATION VIEW) */}
+        {/* 2. CHẾ ĐỘ HỌC SINH (MẶC ĐỊNH CHO MỌI NGƯỜI DÙNG KHI TRUY CẬP) */}
         {appRole === 'student' && (
           <>
-            {/* Giai đoạn A: Thí sinh chuẩn bị vào phòng thi */}
             {studentExamPhase === 'student_taking' && !hasStartedExam && (
               <StudentExamLaunch
                 exam={exam}
@@ -730,7 +739,6 @@ export default function App() {
               />
             )}
 
-            {/* Giai đoạn B: Thí sinh đang làm bài thi */}
             {studentExamPhase === 'student_taking' && hasStartedExam && (
               <div className="space-y-4">
                 <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-2xl px-4 sm:px-5 py-2.5 text-white border border-indigo-500/30 shadow-md flex flex-wrap items-center justify-between gap-3">
@@ -793,7 +801,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Giai đoạn C: Báo cáo kết quả & Lời giải chi tiết sau khi nộp */}
             {studentExamPhase === 'student_results' && evaluation && (
               <ExamResults
                 exam={exam}
@@ -809,7 +816,6 @@ export default function App() {
 
       </main>
 
-      {/* HỘP THOẠI QUẢN LÝ ĐỀ THI (JSON & BUILDER) */}
       <TeacherManagementModal
         isOpen={isTeacherModalOpen}
         onClose={() => setIsTeacherModalOpen(false)}
@@ -823,7 +829,6 @@ export default function App() {
         onOpenSaveToBank={() => setIsSaveExamModalOpen(true)}
       />
 
-      {/* HỘP THOẠI LƯU ĐỀ THI VÀO NGÂN HÀNG DỮ LIỆU GDPT 2018 */}
       {isSaveExamModalOpen && (
         <SaveExamToBankModal
           isOpen={isSaveExamModalOpen}
@@ -833,7 +838,6 @@ export default function App() {
         />
       )}
 
-      {/* HỘP THOẠI CHIA SẺ ĐỀ THI, MÃ PHÒNG VÀ QR CODE */}
       <ShareExamModal
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
@@ -841,7 +845,6 @@ export default function App() {
         roomCode={activeExamCode}
       />
 
-      {/* Toast thông báo toàn cục */}
       {globalToastMessage && (
         <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white text-xs font-semibold px-4 py-3 rounded-2xl shadow-2xl border border-emerald-500/40 flex items-center gap-2 animate-in slide-in-from-bottom duration-200">
           <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
@@ -849,7 +852,6 @@ export default function App() {
         </div>
       )}
 
-      {/* HỘP THOẠI IN ĐỀ THI & XUẤT PDF */}
       <PrintModal
         isOpen={printConfig.isOpen}
         onClose={() => setPrintConfig((prev) => ({ ...prev, isOpen: false }))}
@@ -860,19 +862,16 @@ export default function App() {
         bundle={bundle}
       />
 
-      {/* SỔ TAY TRA CỨU CÔNG THỨC VẬT LÍ */}
       <FormulaSheetModal
         isOpen={isFormulaSheetOpen}
         onClose={() => setIsFormulaSheetOpen(false)}
       />
 
-      {/* MÁY TÍNH KHOA HỌC BỎ TÚI */}
       <ScientificCalculatorModal
         isOpen={isCalculatorOpen}
         onClose={() => setIsCalculatorOpen(false)}
       />
 
-      {/* MODAL TÙY BIẾN HÌNH NỀN HỆ THỐNG */}
       <ThemeCustomizerModal
         isOpen={isThemeModalOpen}
         onClose={() => setIsThemeModalOpen(false)}
@@ -880,7 +879,6 @@ export default function App() {
         onSelectTheme={handleSelectTheme}
       />
 
-      {/* CHÂN TRANG ỨNG DỤNG */}
       <footer className="mt-auto py-4 px-6 border-t border-slate-200 bg-white/70 text-center text-xs text-slate-500">
         PhysiXam - Hệ thống Quản trị & Khảo thí Trực tuyến môn Vật lí THPT • Hỗ trợ song song Chế độ Giáo viên & Học sinh
       </footer>
