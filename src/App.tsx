@@ -125,7 +125,7 @@ export default function App() {
     mode: 'exam_only',
   });
 
-  // Tải dữ liệu từ MongoDB Atlas khi chạy (Bao gồm Submissions, ExamPackages, và Assignments)
+  // Tải dữ liệu từ MongoDB Atlas và tự động kích hoạt nạp bài giao ngay khi dữ liệu về
   useEffect(() => {
     async function loadCloudData() {
       try {
@@ -143,20 +143,91 @@ export default function App() {
           });
         }
 
+        let currentActivePkgs = examPackages;
         if (cloudPkgs && cloudPkgs.length > 0) {
           setExamPackages((prev: any[]) => {
             const existingIds = new Set(prev.map((p: any) => p.id));
             const newItems = cloudPkgs.filter((p: any) => !existingIds.has(p.id));
-            return [...newItems, ...prev];
+            const merged = [...newItems, ...prev];
+            currentActivePkgs = merged;
+            return merged;
           });
         }
 
+        let currentActiveAssigns = assignments;
         if (cloudAssigns && cloudAssigns.length > 0) {
           setAssignments((prev: any[]) => {
             const existingIds = new Set(prev.map((a: any) => a.id));
             const newItems = cloudAssigns.filter((a: any) => !existingIds.has(a.id));
-            return [...newItems, ...prev];
+            const merged = [...newItems, ...prev];
+            currentActiveAssigns = merged;
+            return merged;
           });
+        }
+
+        // TỰ ĐỘNG BẮT VÀ NẠP ĐỀ TỪ LINK NGẮN KHI DỮ LIỆU CLOUD VỪA TẢI VỀ
+        const hash = window.location.hash || '';
+        const search = window.location.search || '';
+        const codeMatch = hash.match(/code=([^&]+)/) || search.match(/code=([^&]+)/);
+        let targetCode = codeMatch ? decodeURIComponent(codeMatch[1]).trim().toLowerCase() : null;
+        if (!targetCode && hash.startsWith('#exam-')) {
+          targetCode = hash.substring(6).trim().toLowerCase();
+        }
+
+        if (targetCode) {
+          const allPkgs = cloudPkgs && cloudPkgs.length > 0 ? cloudPkgs : currentActivePkgs;
+          const allAssigns = cloudAssigns && cloudAssigns.length > 0 ? cloudAssigns : currentActiveAssigns;
+
+          const foundInBank = allPkgs.find(
+            (p: any) => p?.code?.toLowerCase() === targetCode || p?.id?.toLowerCase() === targetCode
+          );
+
+          let examToSet: Exam | null = null;
+          let matchedAssign: any = null;
+
+          if (foundInBank) {
+            examToSet = foundInBank.examData;
+          } else {
+            matchedAssign = allAssigns.find((a: any) => a?.accessCode?.toLowerCase() === targetCode);
+            if (matchedAssign) {
+              const matchedPkg = allPkgs.find((p: any) => p?.id === matchedAssign.examId);
+              if (matchedPkg) examToSet = matchedPkg.examData;
+            }
+          }
+
+          if (examToSet) {
+            setExam(examToSet);
+            setTimeRemainingSeconds((examToSet.durationMinutes || 45) * 60);
+            setAnswers({});
+            setFlaggedQuestionIds(new Set());
+            setCurrentQuestionIndex(0);
+            setEvaluation(null);
+            setAppRole('student');
+            setStudentExamPhase('student_taking');
+            setHasStartedExam(false);
+
+            if (matchedAssign?.className) {
+              setCandidateInfo((prev) => ({
+                ...prev,
+                studentClass: matchedAssign.className,
+              }));
+            }
+
+            if (matchedAssign?.antiCheatEnabled !== undefined) {
+              const newAntiCheat: AntiCheatConfig = {
+                ...antiCheatConfig,
+                enabled: matchedAssign.antiCheatEnabled,
+                requireFullscreen: matchedAssign.requireFullscreen ?? true,
+                maxViolations: matchedAssign.maxViolations ?? 3,
+                preventCopyAndShortcuts: matchedAssign.preventCopyAndShortcuts ?? true,
+                trackTabSwitching: matchedAssign.trackTabSwitching ?? true,
+              };
+              setAntiCheatConfig(newAntiCheat);
+              setAuditLog(createInitialAuditLog(newAntiCheat));
+            }
+
+            showGlobalToast(`Đã nhận bài thi: "${examToSet.title}"!`);
+          }
         }
       } catch (err) {
         console.error('Lỗi nạp dữ liệu từ Cloud:', err);
@@ -177,7 +248,7 @@ export default function App() {
     } catch {}
   }, [assignments]);
 
-  // BỘ ĐIỀU HƯỚNG TỰ ĐỘNG THEO LINK: Nạp đúng đề và ép buộc Chế độ Học sinh
+  // BỘ ĐIỀU HƯỚNG THEO DÕI URL HASH HOẶC QUERY
   useEffect(() => {
     const handleUrlHashOrQuery = () => {
       try {
@@ -206,7 +277,6 @@ export default function App() {
           detectedAccessCode = hash.substring(6);
         }
 
-        // Tìm trong ngân hàng đề thi hoặc danh sách bài giao
         if (!loadedExam && detectedAccessCode) {
           const cleanCode = detectedAccessCode.trim().toLowerCase();
           const foundInBank = examPackages.find(
@@ -223,7 +293,6 @@ export default function App() {
           }
         }
 
-        // Khi tìm thấy đề hoặc có tham số truy cập, ÉP BUỘC VÀO CHẾ ĐỘ HỌC SINH
         if (loadedExam) {
           setExam(loadedExam);
           setTimeRemainingSeconds((loadedExam.durationMinutes || 45) * 60);
@@ -299,6 +368,7 @@ export default function App() {
       requireFullscreen: assignment.requireFullscreen,
       maxViolations: assignment.maxViolations,
       preventCopyAndShortcuts: assignment.preventCopyAndShortcuts,
+      trackTabSwitching: true,
     };
     setAntiCheatConfig(newAntiCheat);
     setAuditLog(createInitialAuditLog(newAntiCheat));
