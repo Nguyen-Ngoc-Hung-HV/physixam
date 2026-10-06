@@ -1,93 +1,138 @@
 import express from 'express';
-import dotenv from 'dotenv';
+import { MongoClient } from 'mongodb';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import { connectToDatabase } from './src/utils/db.ts';
+import dotenv from 'dotenv';
 
 dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 const app = express();
-const PORT = process.env.PORT || 3000;
+const port = process.env.PORT || 3000;
 
-app.use(express.json({ limit: '15mb' }));
-
-// 1. Kiểm tra trạng thái kết nối Database
-app.get('/api/health', async (_req, res) => {
-  try {
-    const db = await connectToDatabase();
-    res.json({ success: true, message: 'Đã kết nối MongoDB Atlas thành công!', dbName: db.databaseName });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+// Thiết lập header CORS trực tiếp bằng Express mà không cần thư viện ngoài
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
   }
+  next();
 });
 
-// 2. Lưu bài nộp học sinh vào MongoDB
+app.use(express.json({ limit: '50mb' }));
+
+const uri = process.env.MONGODB_URI;
+let client: MongoClient | null = null;
+let db: any = null;
+
+async function connectToMongo() {
+  if (!uri) {
+    console.warn('⚠️ MONGODB_URI chưa được cấu hình. Hệ thống chạy ở chế độ offline.');
+    return;
+  }
+  try {
+    client = new MongoClient(uri);
+    await client.connect();
+    db = client.db('physixam');
+    console.log('✅ Đã kết nối thành công tới MongoDB Atlas!');
+  } catch (err) {
+    console.error('❌ Lỗi kết nối MongoDB Atlas:', err);
+  }
+}
+
+connectToMongo();
+
+// ================= API BÀI NỘP =================
 app.post('/api/submissions', async (req, res) => {
   try {
-    const db = await connectToDatabase();
     const submission = req.body;
-    const result = await db.collection('submissions').insertOne({
-      ...submission,
-      createdAt: new Date(),
-    });
-    res.json({ success: true, insertedId: result.insertedId });
-  } catch (error: any) {
-    console.error('Lỗi lưu submission:', error);
-    res.status(500).json({ success: false, error: error.message });
+    if (!submission || !submission.id) {
+      return res.status(400).json({ success: false, message: 'Dữ liệu không hợp lệ' });
+    }
+    if (db) {
+      const collection = db.collection('submissions');
+      await collection.updateOne({ id: submission.id }, { $set: submission }, { upsert: true });
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// 3. Lấy danh sách toàn bộ bài nộp
-app.get('/api/submissions', async (_req, res) => {
+app.get('/api/submissions', async (req, res) => {
   try {
-    const db = await connectToDatabase();
-    const list = await db.collection('submissions').find().sort({ createdAt: -1 }).toArray();
-    res.json({ success: true, submissions: list });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+    if (!db) return res.json({ success: true, submissions: [] });
+    const collection = db.collection('submissions');
+    const submissions = await collection.find({}).sort({ _id: -1 }).limit(100).toArray();
+    res.json({ success: true, submissions });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// 4. Lưu hoặc cập nhật Gói đề thi vào Ngân hàng đề
+// ================= API NGÂN HÀNG ĐỀ THI =================
 app.post('/api/exam-packages', async (req, res) => {
   try {
-    const db = await connectToDatabase();
     const pkg = req.body;
-    await db.collection('exam_packages').updateOne(
-      { id: pkg.id },
-      { $set: { ...pkg, updatedAt: new Date() } },
-      { upsert: true }
-    );
-    res.json({ success: true, message: 'Đã lưu gói đề thi thành công' });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+    if (!pkg || !pkg.id) {
+      return res.status(400).json({ success: false, message: 'Dữ liệu gói đề không hợp lệ' });
+    }
+    if (db) {
+      const collection = db.collection('exam_packages');
+      await collection.updateOne({ id: pkg.id }, { $set: pkg }, { upsert: true });
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// 5. Lấy toàn bộ gói đề thi từ ngân hàng
-app.get('/api/exam-packages', async (_req, res) => {
+app.get('/api/exam-packages', async (req, res) => {
   try {
-    const db = await connectToDatabase();
-    const packages = await db.collection('exam_packages').find().toArray();
+    if (!db) return res.json({ success: true, packages: [] });
+    const collection = db.collection('exam_packages');
+    const packages = await collection.find({}).toArray();
     res.json({ success: true, packages });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// Luôn phục vụ giao diện tĩnh từ thư mục dist
-const distPath = path.join(__dirname, 'dist');
-app.use(express.static(distPath));
-
-app.get('*', (_req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'));
+// ================= API LƯỢT GIAO ĐỀ (ASSIGNMENTS) =================
+app.post('/api/assignments', async (req, res) => {
+  try {
+    const assignment = req.body;
+    if (!assignment || !assignment.id) {
+      return res.status(400).json({ success: false, message: 'Dữ liệu giao bài không hợp lệ' });
+    }
+    if (db) {
+      const collection = db.collection('assignments');
+      await collection.updateOne({ id: assignment.id }, { $set: assignment }, { upsert: true });
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
-app.listen(PORT, () => {
-  console.log(`\n==================================================`);
-  console.log(`>>> PhysiXam Server đang chạy: http://localhost:${PORT}`);
-  console.log(`==================================================\n`);
+app.get('/api/assignments', async (req, res) => {
+  try {
+    if (!db) return res.json({ success: true, assignments: [] });
+    const collection = db.collection('assignments');
+    const assignments = await collection.find({}).sort({ _id: -1 }).toArray();
+    res.json({ success: true, assignments });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Phục vụ frontend static build
+app.use(express.static(path.join(__dirname, 'dist')));
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
+app.listen(port, () => {
+  console.log(`🚀 PhysiXam Server đang chạy tại cổng ${port}`);
 });

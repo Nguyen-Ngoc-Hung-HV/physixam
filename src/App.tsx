@@ -44,12 +44,12 @@ import {
   fetchAssignmentsFromCloud
 } from './services/apiSync';
 
-// MẬT KHẨU BẢO VỆ CHẾ ĐỘ GIÁO VIÊN DÀNH CHO MÁY KHÁCH
+// MẬT KHẨU BẢO VỆ CHẾ ĐỘ GIÁO VIÊN
 const TEACHER_ADMIN_KEY = 'physixam_teacher_auth_pass';
 const DEFAULT_TEACHER_PIN = '123456'; 
 
 export default function App() {
-  // KIỂM TRA QUYỀN MÁY CHỦ: Mặc định mọi khách/học sinh vào là Chế độ Học sinh
+  // BẢO MẬT: Mặc định mọi máy khách / học sinh vào là CHẾ ĐỘ HỌC SINH
   const [appRole, setAppRole] = useState<'teacher' | 'student'>(() => {
     try {
       const isTeacherAuthed = safeStorage.getItem(TEACHER_ADMIN_KEY);
@@ -125,7 +125,7 @@ export default function App() {
     mode: 'exam_only',
   });
 
-  // Tải dữ liệu từ MongoDB Atlas và tự động kích hoạt nạp bài giao ngay khi dữ liệu về
+  // Tải dữ liệu từ MongoDB Atlas khi ứng dụng khởi chạy
   useEffect(() => {
     async function loadCloudData() {
       try {
@@ -165,7 +165,7 @@ export default function App() {
           });
         }
 
-        // TỰ ĐỘNG BẮT VÀ NẠP ĐỀ TỪ LINK NGẮN KHI DỮ LIỆU CLOUD VỪA TẢI VỀ
+        // TỰ ĐỘNG BẮT ĐỀ TỪ LINK NGẮN VÀ MỞ NGAY GIAO DIỆN HỌC SINH
         const hash = window.location.hash || '';
         const search = window.location.search || '';
         const codeMatch = hash.match(/code=([^&]+)/) || search.match(/code=([^&]+)/);
@@ -220,7 +220,7 @@ export default function App() {
                 requireFullscreen: matchedAssign.requireFullscreen ?? true,
                 maxViolations: matchedAssign.maxViolations ?? 3,
                 preventCopyAndShortcuts: matchedAssign.preventCopyAndShortcuts ?? true,
-                trackTabSwitching: matchedAssign.trackTabSwitching ?? true,
+                trackTabSwitching: true,
               };
               setAntiCheatConfig(newAntiCheat);
               setAuditLog(createInitialAuditLog(newAntiCheat));
@@ -248,7 +248,7 @@ export default function App() {
     } catch {}
   }, [assignments]);
 
-  // BỘ ĐIỀU HƯỚNG THEO DÕI URL HASH HOẶC QUERY
+  // Bộ điều hướng URL: Luôn ép vào chế độ Học sinh khi mở link đề
   useEffect(() => {
     const handleUrlHashOrQuery = () => {
       try {
@@ -258,7 +258,6 @@ export default function App() {
         let loadedExam: Exam | null = null;
         let detectedAccessCode: string | null = null;
 
-        // 1. Link nén toàn bộ đề thi trực tiếp (#exam=...)
         if (hash.includes('exam=')) {
           const rawHashPart = hash.split('exam=')[1]?.split('&')[0];
           if (rawHashPart) loadedExam = decompressExamFromHash(rawHashPart);
@@ -268,7 +267,6 @@ export default function App() {
           if (rawQueryPart) loadedExam = decompressExamFromHash(rawQueryPart);
         }
 
-        // 2. Link theo mã bài thi (#code=... hoặc ?code=... hoặc #exam-...)
         if (!loadedExam) {
           const codeMatch = hash.match(/code=([^&]+)/) || search.match(/code=([^&]+)/);
           if (codeMatch && codeMatch[1]) detectedAccessCode = decodeURIComponent(codeMatch[1]);
@@ -319,6 +317,38 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handleUrlHashOrQuery);
   }, [examPackages, assignments]);
 
+  // HÀM BẢO MẬT CHẾ ĐỘ GIÁO VIÊN BẰNG MÃ PIN
+  const handleExitToTeacherMode = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    }
+
+    const isAuthed = safeStorage.getItem(TEACHER_ADMIN_KEY) === 'true';
+    if (!isAuthed) {
+      const inputPass = window.prompt('Hệ thống bảo mật: Vui lòng nhập mã PIN xác thực Giáo viên:');
+      if (inputPass === DEFAULT_TEACHER_PIN || inputPass === '6868') {
+        safeStorage.setItem(TEACHER_ADMIN_KEY, 'true');
+        setAppRole('teacher');
+        showGlobalToast('Đã xác thực quyền Giáo viên thành công!');
+      } else if (inputPass !== null) {
+        alert('Mã PIN không chính xác! Bạn đang ở chế độ làm bài của Học sinh.');
+        return;
+      } else {
+        return;
+      }
+    } else {
+      setAppRole('teacher');
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handlePreviewAsStudent = () => {
+    setAppRole('student');
+    setStudentExamPhase('student_taking');
+    setHasStartedExam(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleSaveExamPackage = (newPkg: ExamPackage) => {
     setExamPackages((prev: any[]) => {
       const idx = prev.findIndex((p: any) => p?.id === newPkg.id);
@@ -332,7 +362,7 @@ export default function App() {
       saveExamPackagesToStorage(updated);
       return updated;
     });
-    showGlobalToast(`Đã lưu thành công đề thi '${newPkg.title}' vào Ngân hàng đề (Khối ${newPkg.grade})!`);
+    showGlobalToast(`Đã lưu đề thi '${newPkg.title}' vào Ngân hàng đề!`);
     syncExamPackageToCloud(newPkg);
   };
 
@@ -342,7 +372,7 @@ export default function App() {
       saveExamPackagesToStorage(updated);
       return updated;
     });
-    showGlobalToast('Đã xóa đề thi khỏi Ngân hàng đề thành công!');
+    showGlobalToast('Đã xóa đề thi khỏi Ngân hàng đề!');
   };
 
   const handleSelectExamPackage = (pkg: ExamPackage) => {
@@ -358,7 +388,7 @@ export default function App() {
   const handleAssignExam = (pkg: ExamPackage, assignment: ExamAssignmentInfo, switchToStudent: boolean) => {
     setAssignments((prev: any[]) => [assignment, ...prev.filter((a: any) => a?.id !== assignment.id)]);
     
-    // ĐỒNG BỘ LƯỢT GIAO ĐỀ VÀ GÓI ĐỀ LÊN MONGODB ATLAS
+    // Đồng bộ lên Cloud
     syncAssignmentToCloud(assignment);
     syncExamPackageToCloud(pkg);
 
@@ -563,35 +593,6 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleExitToTeacherMode = () => {
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {});
-    }
-
-    const isAuthed = safeStorage.getItem(TEACHER_ADMIN_KEY) === 'true';
-    if (!isAuthed) {
-      const inputPass = window.prompt('Hệ thống bảo mật: Vui lòng nhập mã PIN xác thực Giáo viên:');
-      if (inputPass === DEFAULT_TEACHER_PIN || inputPass === '6868') {
-        safeStorage.setItem(TEACHER_ADMIN_KEY, 'true');
-        setAppRole('teacher');
-        showGlobalToast('Đã xác thực quyền Quản trị viên Giáo viên thành công!');
-      } else {
-        alert('Mã PIN không chính xác! Bạn đang ở chế độ làm bài của Học sinh.');
-        return;
-      }
-    } else {
-      setAppRole('teacher');
-    }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handlePreviewAsStudent = () => {
-    setAppRole('student');
-    setStudentExamPhase('student_taking');
-    setHasStartedExam(false);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
   const handleChangeAntiCheatConfig = (newConfig: AntiCheatConfig) => {
     setAntiCheatConfig(newConfig);
     setAuditLog(createInitialAuditLog(newConfig));
@@ -750,7 +751,7 @@ export default function App() {
         }`}
       >
         
-        {/* 1. MÀN HÌNH GIÁO VIÊN: Chỉ hiển thị khi đã xác thực mật mã hoặc trên máy chủ */}
+        {/* 1. MÀN HÌNH GIÁO VIÊN: Chỉ hiển thị khi đã mở khóa PIN thành công */}
         {appRole === 'teacher' && teacherView === 'portal' && (
           <HomepagePortal
             exam={exam}
@@ -796,7 +797,7 @@ export default function App() {
           />
         )}
 
-        {/* 2. CHẾ ĐỘ HỌC SINH (MẶC ĐỊNH CHO MỌI NGƯỜI DÙNG KHI TRUY CẬP) */}
+        {/* 2. CHẾ ĐỘ HỌC SINH (MẶC ĐỊNH TUYỆT ĐỐI CHO MỌI NGƯỜI DÙNG KHI TRUY CẬP) */}
         {appRole === 'student' && (
           <>
             {studentExamPhase === 'student_taking' && !hasStartedExam && (
