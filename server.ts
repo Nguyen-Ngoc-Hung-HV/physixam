@@ -1,14 +1,19 @@
 import express from 'express';
 import { MongoClient } from 'mongodb';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
+// Khởi tạo __dirname chuẩn cho môi trường ES Module
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Thiết lập header CORS trực tiếp bằng Express mà không cần thư viện ngoài
+// Thiết lập header CORS trực tiếp bằng Express
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
