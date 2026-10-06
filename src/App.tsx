@@ -39,7 +39,9 @@ import {
   syncSubmissionToCloud, 
   fetchSubmissionsFromCloud, 
   syncExamPackageToCloud, 
-  fetchExamPackagesFromCloud 
+  fetchExamPackagesFromCloud,
+  syncAssignmentToCloud,
+  fetchAssignmentsFromCloud
 } from './services/apiSync';
 
 // MẬT KHẨU BẢO VỆ CHẾ ĐỘ GIÁO VIÊN DÀNH CHO MÁY KHÁCH
@@ -123,13 +125,14 @@ export default function App() {
     mode: 'exam_only',
   });
 
-  // Tải dữ liệu từ MongoDB Atlas khi chạy
+  // Tải dữ liệu từ MongoDB Atlas khi chạy (Bao gồm Submissions, ExamPackages, và Assignments)
   useEffect(() => {
     async function loadCloudData() {
       try {
-        const [cloudSubs, cloudPkgs] = await Promise.all([
+        const [cloudSubs, cloudPkgs, cloudAssigns] = await Promise.all([
           fetchSubmissionsFromCloud(),
           fetchExamPackagesFromCloud(),
+          fetchAssignmentsFromCloud(),
         ]);
 
         if (cloudSubs && cloudSubs.length > 0) {
@@ -144,6 +147,14 @@ export default function App() {
           setExamPackages((prev: any[]) => {
             const existingIds = new Set(prev.map((p: any) => p.id));
             const newItems = cloudPkgs.filter((p: any) => !existingIds.has(p.id));
+            return [...newItems, ...prev];
+          });
+        }
+
+        if (cloudAssigns && cloudAssigns.length > 0) {
+          setAssignments((prev: any[]) => {
+            const existingIds = new Set(prev.map((a: any) => a.id));
+            const newItems = cloudAssigns.filter((a: any) => !existingIds.has(a.id));
             return [...newItems, ...prev];
           });
         }
@@ -176,8 +187,8 @@ export default function App() {
         let loadedExam: Exam | null = null;
         let detectedAccessCode: string | null = null;
 
-        // 1. Nếu là link nén toàn bộ đề thi trực tiếp (#exam=...)
-        if (hash.includes('exam='')) {
+        // 1. Link nén toàn bộ đề thi trực tiếp (#exam=...)
+        if (hash.includes('exam=')) {
           const rawHashPart = hash.split('exam=')[1]?.split('&')[0];
           if (rawHashPart) loadedExam = decompressExamFromHash(rawHashPart);
         } else if (search.includes('exam=')) {
@@ -186,7 +197,7 @@ export default function App() {
           if (rawQueryPart) loadedExam = decompressExamFromHash(rawQueryPart);
         }
 
-        // 2. Nếu là link theo mã bài thi (#code=... hoặc #exam-...)
+        // 2. Link theo mã bài thi (#code=... hoặc ?code=... hoặc #exam-...)
         if (!loadedExam) {
           const codeMatch = hash.match(/code=([^&]+)/) || search.match(/code=([^&]+)/);
           if (codeMatch && codeMatch[1]) detectedAccessCode = decodeURIComponent(codeMatch[1]);
@@ -225,7 +236,6 @@ export default function App() {
           setHasStartedExam(false);
           showGlobalToast(`Đã nhận bài thi: "${loadedExam.title}"!`);
         } else if (detectedAccessCode) {
-          // Trường hợp mạng tải chậm chưa kịp kéo từ Cloud về
           setAppRole('student');
           setStudentExamPhase('student_taking');
           setHasStartedExam(false);
@@ -279,6 +289,10 @@ export default function App() {
   const handleAssignExam = (pkg: ExamPackage, assignment: ExamAssignmentInfo, switchToStudent: boolean) => {
     setAssignments((prev: any[]) => [assignment, ...prev.filter((a: any) => a?.id !== assignment.id)]);
     
+    // ĐỒNG BỘ LƯỢT GIAO ĐỀ VÀ GÓI ĐỀ LÊN MONGODB ATLAS
+    syncAssignmentToCloud(assignment);
+    syncExamPackageToCloud(pkg);
+
     const newAntiCheat: AntiCheatConfig = {
       ...antiCheatConfig,
       enabled: assignment.antiCheatEnabled,
@@ -418,7 +432,6 @@ export default function App() {
     };
     result.auditLog = finalAuditLog;
 
-    // Gán thông tin thí sinh chính xác vào bài thi để tránh tên mặc định
     (result as any).candidateName = candidateInfo.name || 'Thí sinh';
     (result as any).studentClass = candidateInfo.studentClass;
     (result as any).candidateNumber = candidateInfo.candidateNumber;
@@ -480,7 +493,6 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // BẢO VỆ CHẾ ĐỘ GIÁO VIÊN: Khách muốn vào Giáo viên phải có mật mã
   const handleExitToTeacherMode = () => {
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});

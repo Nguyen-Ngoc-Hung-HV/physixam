@@ -1,5 +1,5 @@
 import { StudentSubmission } from '../types/exam';
-import { ExamPackage } from '../types/curriculum';
+import { ExamPackage, ExamAssignmentInfo } from '../types/curriculum';
 
 export async function syncSubmissionToCloud(submission: StudentSubmission): Promise<boolean> {
   try {
@@ -53,6 +53,39 @@ export async function fetchExamPackagesFromCloud(): Promise<ExamPackage[]> {
     }
   } catch (err) {
     console.warn('Không thể tải ngân hàng đề từ cloud:', err);
+  }
+  return [];
+}
+
+// ĐỒNG BỘ LƯỢT GIAO ĐỀ (ASSIGNMENT) LÊN CLOUD ĐỂ DÙNG LINK NGẮN (#code=...)
+export async function syncAssignmentToCloud(assignment: ExamAssignmentInfo): Promise<boolean> {
+  try {
+    const res = await fetch('/api/assignments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(assignment),
+    });
+    const data = await res.json();
+    return data.success === true;
+  } catch (err) {
+    console.warn('Lỗi lưu bài giao lên cloud:', err);
+    return false;
+  }
+}
+
+// TẢI DANH SÁCH LƯỢT GIAO ĐỀ TỪ CLOUD VỀ MÁY HỌC SINH
+export async function fetchAssignmentsFromCloud(): Promise<ExamAssignmentInfo[]> {
+  try {
+    const res = await fetch('/api/assignments');
+    const data = await res.json();
+    if (data.success && Array.isArray(data.assignments)) {
+      return data.assignments;
+    }
+    if (Array.isArray(data)) {
+      return data;
+    }
+  } catch (err) {
+    console.warn('Không thể tải danh sách bài giao từ cloud:', err);
   }
   return [];
 }
