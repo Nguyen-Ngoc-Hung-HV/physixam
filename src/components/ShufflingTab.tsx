@@ -22,6 +22,37 @@ interface ShufflingTabProps {
   onOpenPrintMatrix?: (bundle: ExamVariantBundle) => void;
 }
 
+// HÀM TẢI XUỐNG AN TOÀN TUYỆT ĐỐI CHO SAFARI MACOS / IOS VÀ MỌI TRÌNH DUYỆT
+function safeDownloadBlob(blob: Blob, filename: string) {
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.style.display = 'none';
+  link.href = url;
+  link.download = filename;
+  link.setAttribute('rel', 'noopener noreferrer');
+  document.body.appendChild(link);
+  
+  // Kích hoạt click chuẩn cho Safari WebKit
+  const evt = new MouseEvent('click', {
+    bubbles: true,
+    cancelable: true,
+    view: window,
+  });
+  link.dispatchEvent(evt);
+
+  // Trì hoãn dọn dẹp URL để Safari hoàn thành tải stream
+  setTimeout(() => {
+    try {
+      if (link.parentNode) {
+        link.parentNode.removeChild(link);
+      }
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      // bỏ qua lỗi nếu DOM đã dọn dẹp
+    }
+  }, 10000);
+}
+
 export const ShufflingTab: React.FC<ShufflingTabProps> = ({
   currentExam,
   onApplyBundle,
@@ -81,7 +112,7 @@ export const ShufflingTab: React.FC<ShufflingTabProps> = ({
     showNotification('Đã kích hoạt bộ mã đề! Học sinh giờ đây có thể chọn bất kỳ mã đề nào trên thanh điều hướng.');
   };
 
-  // TẢI TRỌN BỘ ĐỀ THI & CHẤM THI (.ZIP)
+  // TẢI TRỌN BỘ ĐỀ THI & CHẤM THI (.ZIP) - KHẮC PHỤC TRIỆT ĐỂ LỖI SAFARI
   const handleExportZip = async () => {
     if (!bundle) return;
     setIsExportingZip(true);
@@ -103,20 +134,14 @@ export const ShufflingTab: React.FC<ShufflingTabProps> = ({
     }
   };
 
-  // Tải riêng lẻ 1 tệp Word của một mã đề
+  // Tải riêng lẻ 1 tệp Word của một mã đề - KHẮC PHỤC SAFARI BLOB
   const handleDownloadSingleWord = async (v: Exam) => {
     try {
-      setDownloadingWordCode(v.code || '101');
-      const blob = await generateWordExamCodeDocx(v, v.code || '101');
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `De_Kiem_Tra_Ma_${v.code || '101'}.docx`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      showNotification(`Đã tải xuống thành công tệp Word đề thi Mã ${v.code}!`);
+      const codeStr = v.code || '101';
+      setDownloadingWordCode(codeStr);
+      const blob = await generateWordExamCodeDocx(v, codeStr);
+      safeDownloadBlob(blob, `De_Kiem_Tra_Ma_${codeStr}.docx`);
+      showNotification(`Đã tải xuống thành công tệp Word đề thi Mã ${codeStr}!`);
     } catch (err) {
       console.error('Lỗi tạo file Word:', err);
       showNotification('Không thể tạo file Word. Vui lòng thử lại!');
@@ -372,7 +397,7 @@ export const ShufflingTab: React.FC<ShufflingTabProps> = ({
 
               <button
                 onClick={() => exportAnswerMatrixToCSV(bundle)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 transition cursor-pointer shadow-2xs"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 transition cursor-pointer shadow-2xs"
                 title="Tải bảng ma trận đáp án Excel CSV chuẩn UTF-8 BOM"
               >
                 <Download className="w-3.5 h-3.5 text-emerald-600" />
@@ -381,7 +406,7 @@ export const ShufflingTab: React.FC<ShufflingTabProps> = ({
 
               <button
                 onClick={() => exportBundleToJson(bundle)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition cursor-pointer"
                 title="Tải toàn bộ bộ mã đề dạng tệp JSON"
               >
                 <Download className="w-3.5 h-3.5" />

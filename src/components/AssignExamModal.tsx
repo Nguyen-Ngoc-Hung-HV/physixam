@@ -4,7 +4,7 @@ import { compressExamToHash } from '../utils/examShareUrl';
 import { syncAssignmentToCloud, syncExamPackageToCloud } from '../services/apiSync';
 import { 
   X, Copy, Check, Users, ShieldAlert, 
-  QrCode, Play, Send, Calendar, Clock, Lock
+  QrCode, Play, Send, Calendar, Clock, Lock, Shuffle, BookOpen
 } from 'lucide-react';
 import QRCode from 'qrcode';
 
@@ -23,33 +23,48 @@ export const AssignExamModal: React.FC<AssignExamModalProps> = ({
 }) => {
   if (!isOpen || !examPackage) return null;
 
+  // 1. Tùy chỉnh tên lớp nhận bài (gõ trực tiếp hoặc chọn nhanh)
   const [className, setClassName] = useState<string>('Lớp 12A1');
-  const [openTime] = useState<string>('01:18 06/10/2026');
-  const [deadline] = useState<string>('01:18 08/10/2026');
+
+  // Hàm tạo chuỗi ngày giờ mặc định cho input datetime-local
+  const getNowDateTimeString = () => {
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  };
+
+  const getFutureDateTimeString = (daysAhead: number) => {
+    const future = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000);
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${future.getFullYear()}-${pad(future.getMonth() + 1)}-${pad(future.getDate())}T${pad(future.getHours())}:${pad(future.getMinutes())}`;
+  };
+
+  // 2. Tùy chỉnh thời gian mở bài & hạn chót
+  const [openTime, setOpenTime] = useState<string>(getNowDateTimeString());
+  const [deadline, setDeadline] = useState<string>(getFutureDateTimeString(2));
   const [noDeadline, setNoDeadline] = useState<boolean>(true);
+
+  // 3. Cấu hình Giám sát thi (Anti-cheat) & Số lần vi phạm linh hoạt
   const [antiCheatEnabled, setAntiCheatEnabled] = useState<boolean>(true);
   const [requireFullscreen, setRequireFullscreen] = useState<boolean>(true);
   const [maxViolations, setMaxViolations] = useState<number>(3);
   const [preventCopyAndShortcuts, setPreventCopyAndShortcuts] = useState<boolean>(true);
 
+  // 4. Cấu hình phương thức phân phối đề: Xáo ngẫu nhiên vs Giữ nguyên gốc
+  const [shuffleQuestions, setShuffleQuestions] = useState<boolean>(true);
+
+  // Trạng thái copy & QR Code
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
   const [showQr, setShowQr] = useState<boolean>(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Mã truy cập bài thi dạng ngắn (VD: PHY-1202)
   const cleanCode = examPackage.code || '1202';
   const shortAccessCode = `PHY-${cleanCode}`;
-
   const currentOrigin = window.location.origin;
   const shortShareUrl = `${currentOrigin}/#code=${shortAccessCode}`;
-  
-  // Link nén zero-cookie tự chứa toàn bộ dữ liệu đề thi
-  const compressedHash = compressExamToHash(examPackage.examData);
-  const fullPayloadShareUrl = `${currentOrigin}/#exam=${compressedHash}`;
 
-  // Vẽ mã QR khi mở hộp thoại hoặc bật xem QR
   useEffect(() => {
     if (showQr && canvasRef.current) {
       QRCode.toCanvas(canvasRef.current, shortShareUrl, { width: 170, margin: 2 }, (error: any) => {
@@ -57,6 +72,21 @@ export const AssignExamModal: React.FC<AssignExamModalProps> = ({
       });
     }
   }, [showQr, shortShareUrl]);
+
+  const formatDateTimeDisplay = (isoStr: string) => {
+    try {
+      const d = new Date(isoStr);
+      return d.toLocaleString('vi-VN', { 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        day: '2-digit', 
+        month: '2-digit', 
+        year: 'numeric' 
+      });
+    } catch {
+      return isoStr;
+    }
+  };
 
   const buildAssignmentObject = (): ExamAssignmentInfo => ({
     id: `assign-${Date.now()}`,
@@ -66,16 +96,17 @@ export const AssignExamModal: React.FC<AssignExamModalProps> = ({
     grade: examPackage.grade,
     className,
     assignedAt: new Date().toLocaleString('vi-VN'),
-    deadline: noDeadline ? 'Không thời hạn' : deadline,
+    openTime: formatDateTimeDisplay(openTime),
+    deadline: noDeadline ? 'Không thời hạn' : formatDateTimeDisplay(deadline),
     accessCode: shortAccessCode,
     antiCheatEnabled,
     requireFullscreen,
     maxViolations,
     preventCopyAndShortcuts,
+    shuffleQuestions,
     status: 'active',
   });
 
-  // Tự động đẩy dữ liệu lên MongoDB Atlas
   const triggerCloudSync = () => {
     const assignmentObj = buildAssignmentObject();
     syncAssignmentToCloud(assignmentObj);
@@ -128,21 +159,30 @@ export const AssignExamModal: React.FC<AssignExamModalProps> = ({
         </div>
 
         {/* Body */}
-        <div className="p-5 sm:p-6 space-y-5 flex-1">
-          {/* Chọn lớp nhận bài */}
+        <div className="p-5 sm:p-6 space-y-4 flex-1">
+          {/* 1. Chọn hoặc nhập lớp */}
           <div>
-            <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-2">
-              <Users className="w-4 h-4 text-indigo-600" />
-              Chọn lớp nhận bài kiểm tra:
-            </label>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-indigo-600" />
+                Lớp nhận bài kiểm tra:
+              </label>
+              <input
+                type="text"
+                value={className}
+                onChange={(e) => setClassName(e.target.value)}
+                placeholder="Nhập tên lớp..."
+                className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-right w-40"
+              />
+            </div>
+            <div className="flex flex-wrap gap-1.5">
               {['Lớp 12A1', 'Lớp 12A2', 'Lớp 12 Lý', 'Lớp 12 Hóa', 'Lớp 12 Chuyên'].map((cls) => (
                 <button
                   key={cls}
                   onClick={() => setClassName(cls)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                     className === cls 
-                      ? 'bg-indigo-600 text-white shadow-md' 
+                      ? 'bg-indigo-600 text-white shadow-sm' 
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
@@ -152,34 +192,90 @@ export const AssignExamModal: React.FC<AssignExamModalProps> = ({
             </div>
           </div>
 
-          {/* Thời gian */}
-          <div className="grid grid-cols-2 gap-3 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs">
+          {/* 2. Điều chỉnh thời gian mở bài & hạn chót */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs">
             <div>
-              <span className="text-slate-500 font-medium flex items-center gap-1 mb-1">
-                <Calendar className="w-3.5 h-3.5 text-slate-400" /> Thời gian mở bài:
-              </span>
-              <strong className="text-slate-700 font-mono text-2xs">{openTime}</strong>
+              <label className="text-slate-600 font-bold flex items-center gap-1 mb-1.5">
+                <Calendar className="w-3.5 h-3.5 text-indigo-600" /> Thời gian mở bài:
+              </label>
+              <input
+                type="datetime-local"
+                value={openTime}
+                onChange={(e) => setOpenTime(e.target.value)}
+                className="w-full text-xs font-medium border border-slate-300 rounded-lg p-1.5 bg-white focus:ring-1 focus:ring-indigo-500"
+              />
             </div>
             <div>
-              <span className="text-slate-500 font-medium flex items-center gap-1 mb-1">
-                <Clock className="w-3.5 h-3.5 text-slate-400" /> Hạn chót nộp bài:
-              </span>
-              <div className="flex items-center gap-2">
-                <input 
-                  type="checkbox" 
-                  id="noDeadlineCheck" 
-                  checked={noDeadline} 
-                  onChange={(e) => setNoDeadline(e.target.checked)} 
-                  className="rounded text-indigo-600 w-3.5 h-3.5"
-                />
-                <label htmlFor="noDeadlineCheck" className="text-2xs text-slate-700 font-bold cursor-pointer">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-slate-600 font-bold flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-indigo-600" /> Hạn chót nộp bài:
+                </label>
+                <label className="flex items-center gap-1 cursor-pointer text-2xs text-indigo-700 font-bold">
+                  <input
+                    type="checkbox"
+                    checked={noDeadline}
+                    onChange={(e) => setNoDeadline(e.target.checked)}
+                    className="rounded text-indigo-600 w-3 h-3"
+                  />
                   Không hạn
                 </label>
               </div>
+              <input
+                type="datetime-local"
+                disabled={noDeadline}
+                value={deadline}
+                onChange={(e) => setDeadline(e.target.value)}
+                className={`w-full text-xs font-medium border rounded-lg p-1.5 ${
+                  noDeadline 
+                    ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' 
+                    : 'bg-white text-slate-800 border-slate-300 focus:ring-1 focus:ring-indigo-500'
+                }`}
+              />
             </div>
           </div>
 
-          {/* Giám sát thi Anti-cheat */}
+          {/* 3. Chế độ phân phối đề thi (Xáo ngẫu nhiên vs Giữ nguyên gốc) */}
+          <div className="p-3.5 rounded-2xl border bg-gradient-to-r from-amber-50/60 to-orange-50/60 border-amber-200 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Shuffle className="w-4 h-4 text-amber-600" />
+                <span className="text-xs font-bold text-slate-800">Phương thức phân phối đề:</span>
+              </div>
+              <div className="flex bg-slate-200/80 p-0.5 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setShuffleQuestions(true)}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-2xs font-black transition-all ${
+                    shuffleQuestions
+                      ? 'bg-amber-600 text-white shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Shuffle className="w-3 h-3" />
+                  Xáo ngẫu nhiên
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShuffleQuestions(false)}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-2xs font-black transition-all ${
+                    !shuffleQuestions
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <BookOpen className="w-3 h-3" />
+                  Giữ nguyên gốc
+                </button>
+              </div>
+            </div>
+            <div className="text-2xs text-slate-500 leading-relaxed">
+              {shuffleQuestions 
+                ? '• Chế độ Thi: Mỗi học sinh tự động nhận đề xáo trộn ngẫu nhiên thứ tự câu hỏi và đáp án A/B/C/D để chống trao đổi.'
+                : '• Chế độ Ôn tập: Giữ nguyên thứ tự câu hỏi và đáp án của đề gốc để cả lớp theo dõi và chữa bài đồng bộ.'}
+            </div>
+          </div>
+
+          {/* 4. Giám sát thi Anti-cheat & Chọn số lần vi phạm tối đa */}
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -193,23 +289,31 @@ export const AssignExamModal: React.FC<AssignExamModalProps> = ({
                 className="w-4 h-4 text-indigo-600 rounded"
               />
             </div>
-            <div className="text-2xs text-slate-500 space-y-1">
-              <div className="flex items-center justify-between">
-                <span>Bắt buộc chế độ toàn màn hình (Fullscreen)</span>
-                <Check className="w-3.5 h-3.5 text-emerald-600" />
+            
+            {antiCheatEnabled && (
+              <div className="space-y-2 pt-1 border-t border-slate-200 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600">Số lần rời màn hình tối đa trước khi tự thu bài:</span>
+                  <select
+                    value={maxViolations}
+                    onChange={(e) => setMaxViolations(Number(e.target.value))}
+                    className="text-xs font-bold text-indigo-700 bg-white border border-slate-300 rounded-lg px-2.5 py-1 focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value={1}>1 lần (Nghiêm ngặt nhất)</option>
+                    <option value={2}>2 lần</option>
+                    <option value={3}>3 lần (Tiêu chuẩn)</option>
+                    <option value={5}>5 lần (Linh hoạt)</option>
+                  </select>
+                </div>
+                <div className="flex items-center justify-between text-2xs text-slate-500">
+                  <span>Bắt buộc toàn màn hình & Chặn sao chép phím tắt (Ctrl+C, Ctrl+V, F12)</span>
+                  <span className="font-bold text-emerald-600">Đã kích hoạt</span>
+                </div>
               </div>
-              <div className="flex items-center justify-between">
-                <span>Số lần thoát màn hình tối đa trước khi tự nộp:</span>
-                <span className="font-bold text-slate-700">3 lần (Tiêu chuẩn)</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Chặn sao chép đề & phím tắt (Ctrl+C, Ctrl+V, F12)</span>
-                <Check className="w-3.5 h-3.5 text-emerald-600" />
-              </div>
-            </div>
+            )}
           </div>
 
-          {/* KHUNG LINK LÀM BÀI TRỰC TIẾP */}
+          {/* 5. Khung link & mã làm bài */}
           <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
@@ -217,13 +321,9 @@ export const AssignExamModal: React.FC<AssignExamModalProps> = ({
                 Link làm bài trực tiếp cho Học sinh
               </span>
               <span className="text-2xs bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
-                Zero-Cookie Mode
+                Tự động lưu MongoDB
               </span>
             </div>
-
-            <p className="text-2xs text-slate-500">
-              Link đã tự động lưu gói đề lên MongoDB Atlas. Học sinh mở trên điện thoại hay Zalo sẽ vào thẳng phòng thi.
-            </p>
 
             <div className="flex flex-col sm:flex-row gap-2">
               <button
@@ -242,7 +342,7 @@ export const AssignExamModal: React.FC<AssignExamModalProps> = ({
                 className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-white border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-50 transition-colors"
               >
                 <QrCode className="w-4 h-4 text-indigo-600" />
-                {showQr ? 'Ẩn mã QR' : 'Quét mã QR để vào thi'}
+                {showQr ? 'Ẩn mã QR' : 'Quét mã QR'}
               </button>
             </div>
 
@@ -258,7 +358,6 @@ export const AssignExamModal: React.FC<AssignExamModalProps> = ({
               </button>
             </div>
 
-            {/* Mã QR Code hiển thị qua thẻ canvas */}
             {showQr && (
               <div className="mt-3 p-4 bg-white rounded-2xl border border-indigo-200 flex flex-col items-center justify-center space-y-2 animate-in fade-in">
                 <canvas ref={canvasRef} className="rounded-lg shadow-sm" />

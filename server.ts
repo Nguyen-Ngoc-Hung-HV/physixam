@@ -47,7 +47,9 @@ async function connectToMongo() {
 
 connectToMongo();
 
-// ================= API BÀI NỘP =================
+// ================= API BÀI NỘP (SUBMISSIONS) =================
+
+// 1. Thêm hoặc cập nhật bài nộp
 app.post('/api/submissions', async (req, res) => {
   try {
     const submission = req.body;
@@ -64,6 +66,7 @@ app.post('/api/submissions', async (req, res) => {
   }
 });
 
+// 2. Lấy danh sách bài nộp
 app.get('/api/submissions', async (req, res) => {
   try {
     if (!db) return res.json({ success: true, submissions: [] });
@@ -75,7 +78,34 @@ app.get('/api/submissions', async (req, res) => {
   }
 });
 
-// ================= API NGÂN HÀNG ĐỀ THI =================
+// 3. Xóa 1 bài nộp theo ID (Bổ sung mới cho Vấn đề 3)
+app.delete('/api/submissions/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (db) {
+      const collection = db.collection('submissions');
+      await collection.deleteOne({ id });
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4. Xóa toàn bộ danh sách bài nộp (Bổ sung mới cho Vấn đề 3)
+app.delete('/api/submissions', async (req, res) => {
+  try {
+    if (db) {
+      const collection = db.collection('submissions');
+      await collection.deleteMany({});
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ================= API NGÂN HÀNG ĐỀ THI (EXAM PACKAGES) =================
 app.post('/api/exam-packages', async (req, res) => {
   try {
     const pkg = req.body;

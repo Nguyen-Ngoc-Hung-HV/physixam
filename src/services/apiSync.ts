@@ -1,6 +1,8 @@
 import { StudentSubmission } from '../types/exam';
 import { ExamPackage, ExamAssignmentInfo } from '../types/curriculum';
 
+// ================= ĐỒNG BỘ BÀI NỘP CỦA HỌC SINH =================
+
 export async function syncSubmissionToCloud(submission: StudentSubmission): Promise<boolean> {
   try {
     const res = await fetch('/api/submissions', {
@@ -9,9 +11,9 @@ export async function syncSubmissionToCloud(submission: StudentSubmission): Prom
       body: JSON.stringify(submission),
     });
     const data = await res.json();
-    return data.success === true;
+    return !!data.success;
   } catch (err) {
-    console.warn('Lỗi đồng bộ bài nộp lên cloud:', err);
+    console.warn('Lỗi đồng bộ bài nộp lên Cloud:', err);
     return false;
   }
 }
@@ -23,11 +25,42 @@ export async function fetchSubmissionsFromCloud(): Promise<StudentSubmission[]> 
     if (data.success && Array.isArray(data.submissions)) {
       return data.submissions;
     }
+    return [];
   } catch (err) {
-    console.warn('Không thể tải bài nộp từ cloud:', err);
+    console.warn('Lỗi lấy bài nộp từ Cloud:', err);
+    return [];
   }
-  return [];
 }
+
+// Xóa 1 bài nộp theo ID (Phục vụ Vấn đề 3)
+export async function deleteSubmissionFromCloud(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/submissions/${id}`, {
+      method: 'DELETE',
+    });
+    const data = await res.json();
+    return !!data.success;
+  } catch (err) {
+    console.warn('Lỗi xóa bài nộp trên Cloud:', err);
+    return false;
+  }
+}
+
+// Xóa toàn bộ danh sách bài nộp (Phục vụ Vấn đề 3)
+export async function clearAllSubmissionsFromCloud(): Promise<boolean> {
+  try {
+    const res = await fetch('/api/submissions', {
+      method: 'DELETE',
+    });
+    const data = await res.json();
+    return !!data.success;
+  } catch (err) {
+    console.warn('Lỗi xóa toàn bộ bài nộp trên Cloud:', err);
+    return false;
+  }
+}
+
+// ================= ĐỒNG BỘ GÓI ĐỀ THI (EXAM PACKAGES) =================
 
 export async function syncExamPackageToCloud(pkg: ExamPackage): Promise<boolean> {
   try {
@@ -37,9 +70,9 @@ export async function syncExamPackageToCloud(pkg: ExamPackage): Promise<boolean>
       body: JSON.stringify(pkg),
     });
     const data = await res.json();
-    return data.success === true;
+    return !!data.success;
   } catch (err) {
-    console.warn('Lỗi lưu đề thi lên cloud:', err);
+    console.warn('Lỗi đồng bộ gói đề thi lên Cloud:', err);
     return false;
   }
 }
@@ -51,13 +84,15 @@ export async function fetchExamPackagesFromCloud(): Promise<ExamPackage[]> {
     if (data.success && Array.isArray(data.packages)) {
       return data.packages;
     }
+    return [];
   } catch (err) {
-    console.warn('Không thể tải ngân hàng đề từ cloud:', err);
+    console.warn('Lỗi lấy gói đề từ Cloud:', err);
+    return [];
   }
-  return [];
 }
 
-// ĐỒNG BỘ LƯỢT GIAO ĐỀ (ASSIGNMENT) LÊN CLOUD ĐỂ DÙNG LINK NGẮN (#code=...)
+// ================= ĐỒNG BỘ LƯỢT GIAO ĐỀ (ASSIGNMENTS) =================
+
 export async function syncAssignmentToCloud(assignment: ExamAssignmentInfo): Promise<boolean> {
   try {
     const res = await fetch('/api/assignments', {
@@ -66,14 +101,13 @@ export async function syncAssignmentToCloud(assignment: ExamAssignmentInfo): Pro
       body: JSON.stringify(assignment),
     });
     const data = await res.json();
-    return data.success === true;
+    return !!data.success;
   } catch (err) {
-    console.warn('Lỗi lưu bài giao lên cloud:', err);
+    console.warn('Lỗi đồng bộ lượt giao đề lên Cloud:', err);
     return false;
   }
 }
 
-// TẢI DANH SÁCH LƯỢT GIAO ĐỀ TỪ CLOUD VỀ MÁY HỌC SINH
 export async function fetchAssignmentsFromCloud(): Promise<ExamAssignmentInfo[]> {
   try {
     const res = await fetch('/api/assignments');
@@ -81,11 +115,9 @@ export async function fetchAssignmentsFromCloud(): Promise<ExamAssignmentInfo[]>
     if (data.success && Array.isArray(data.assignments)) {
       return data.assignments;
     }
-    if (Array.isArray(data)) {
-      return data;
-    }
+    return [];
   } catch (err) {
-    console.warn('Không thể tải danh sách bài giao từ cloud:', err);
+    console.warn('Lỗi lấy danh sách giao đề từ Cloud:', err);
+    return [];
   }
-  return [];
 }
