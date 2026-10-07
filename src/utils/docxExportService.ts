@@ -1257,13 +1257,26 @@ export async function exportComprehensiveExamZipPackage(
   const cleanTitle = rawTitle.replace(/[^a-zA-Z0-9_\u00C0-\u024F\u1EA0-\u1EF9]/g, '_').slice(0, 30);
   const filename = `Tron_Bo_De_Thi_Va_Cham_Thi_${cleanTitle}_${dateStr}.zip`;
 
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(zipBlob);
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(link.href);
+const blobUrl = URL.createObjectURL(zipBlob);
+    const link = document.createElement('a');
+    link.style.display = 'none';
+    link.href = blobUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    
+    // Giả lập click chuẩn cho Safari WebKit
+    const clickEvt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+    link.dispatchEvent(clickEvt);
+
+    // Trì hoãn 15 giây mới thu hồi URL để Safari kịp nạp luồng tải file về máy
+    setTimeout(() => {
+      try {
+        if (link.parentNode) {
+          link.parentNode.removeChild(link);
+        }
+        URL.revokeObjectURL(blobUrl);
+      } catch (e) {}
+    }, 15000);
 
   if (onProgress) onProgress('Hoàn tất tải về trọn bộ đề thi và chấm thi!', 100);
 }
