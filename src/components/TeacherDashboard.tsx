@@ -207,13 +207,23 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Xóa 1 bài nộp cụ thể (Vấn đề 3)
+// Xóa 1 bài nộp cụ thể (Vấn đề 3)
   const handleDeleteSingleSubmission = async (sub: StudentSubmission) => {
     if (window.confirm(`Thầy có chắc chắn muốn xóa bài thi của thí sinh: "${sub.studentName}" (SBD: ${sub.candidateNumber}) không?`)) {
+      const targetId = (sub as any).id || (sub as any)._id;
+
+      // 1. Gọi trực tiếp hàm xóa của App.tsx để cập nhật danh sách ngay lập tức
       if (onDeleteSubmission) {
-        onDeleteSubmission(sub.id);
+        onDeleteSubmission(targetId);
       }
-      await deleteSubmissionFromCloud(sub.id);
+
+      // 2. Xóa trên Cloud / MongoDB Atlas
+      try {
+        await deleteSubmissionFromCloud(targetId);
+      } catch (e) {
+        console.warn('Lỗi khi xóa trên cloud:', e);
+      }
+
       showToast(`Đã xóa bài thi của thí sinh "${sub.studentName}" thành công!`);
     }
   };
@@ -221,11 +231,19 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   // Xóa toàn bộ danh sách kết quả bài nộp (Vấn đề 3)
   const handleClearAllSubmissions = async () => {
     if (submissions.length === 0) return;
-    if (window.confirm(`CẢNH BÁO: Thầy có chắc chắn muốn XÓA TOÀN BỘ ${submissions.length} bài thi của học sinh không? Dữ liệu trên hệ thống và MongoDB Atlas sẽ được làm trống.`)) {
+    if (window.confirm(`CẢNH BÁO: Thầy có chắc chắn muốn XÓA TOÀN BỘ ${submissions.length} bài thi của học sinh không? Dữ liệu trên hệ thống sẽ bị xóa vĩnh viễn!`)) {
+      // 1. Xóa sạch trên App.tsx
       if (onClearSubmissions) {
         onClearSubmissions();
       }
-      await clearAllSubmissionsFromCloud();
+
+      // 2. Xóa sạch trên Cloud
+      try {
+        await clearAllSubmissionsFromCloud();
+      } catch (e) {
+        console.warn('Lỗi khi xóa sạch cloud:', e);
+      }
+
       showToast('Đã xóa sạch toàn bộ danh sách thí sinh nộp bài thành công!');
     }
   };
