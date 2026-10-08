@@ -31,6 +31,7 @@ import { AntiCheatMonitor } from './components/AntiCheatMonitor';
 import { getSavedBundle } from './utils/shuffler';
 import { getSavedAntiCheatConfig, createInitialAuditLog } from './utils/antiCheat';
 import { getSavedCurrentExam, saveCurrentExam, updateQuestionDiagramInExam } from './utils/examStorage';
+import { normalizeExamJson } from './utils/examJsonAdapter';
 import { ExamPackage, ExamAssignmentInfo } from './types/curriculum';
 import { getSavedExamPackages, saveExamPackagesToStorage } from './data/curriculumData';
 import { safeStorage } from './utils/safeStorage';
@@ -59,6 +60,7 @@ export default function App() {
   });
 
   const [exam, setExam] = useState<Exam>(() => getSavedCurrentExam(samplePhysicsExam));
+
   const [bundle, setBundle] = useState<ExamVariantBundle | null>(() => getSavedBundle());
 
   const [examPackages, setExamPackages] = useState<ExamPackage[]>(() => getSavedExamPackages());
@@ -598,16 +600,21 @@ export default function App() {
     setAuditLog(createInitialAuditLog(newConfig));
   };
 
-  const handleUpdateExam = (newExam: Exam) => {
-    setExam(newExam);
-    saveCurrentExam(newExam);
-    setTimeRemainingSeconds(newExam.durationMinutes * 60);
+const handleUpdateExam = (newExam: any) => {
+    try {
+      const normalized = normalizeExamJson(newExam);
+      setExam(normalized);
+      saveCurrentExam(normalized);
+      setTimeRemainingSeconds((normalized.durationMinutes || 50) * 60);
+    } catch (e) {
+      setExam(newExam);
+      saveCurrentExam(newExam);
+      setTimeRemainingSeconds((newExam.durationMinutes || 50) * 60);
+    }
     setAnswers({});
     setFlaggedQuestionIds(new Set());
     setCurrentQuestionIndex(0);
     setEvaluation(null);
-    setAuditLog(createInitialAuditLog(antiCheatConfig));
-    setHasStartedExam(false);
   };
 
   const handleUpdateQuestionDiagram = (questionId: string, diagram: DiagramData | null) => {
