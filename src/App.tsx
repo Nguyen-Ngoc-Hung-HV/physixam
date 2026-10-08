@@ -898,7 +898,7 @@ const handleUpdateExam = (newExam: any) => {
                 evaluation={evaluation}
                 onRetake={handleRetake}
                 onOpenTeacherMode={handleExitToTeacherMode}
-                onOpenPrint={(printMode) => handleOpenPrint(printMode)}
+                onOpenPrint={(printMode) => handleOpenPrint(printMode as any)}
               />
             )}
           </>
