@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Khởi tạo __dirname chuẩn cho môi trường ES Module
+// Khởi tạo chuẩn __dirname cho môi trường ES Module
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -32,14 +32,16 @@ let db: any = null;
 
 async function connectToMongo() {
   if (!uri) {
-    console.warn('⚠️ MONGODB_URI chưa được cấu hình. Hệ thống chạy ở chế độ offline.');
+    console.warn('⚠️ MONGODB_URI chưa được cấu hình. Hệ thống sẽ chạy ở chế độ lưu trữ cục bộ.');
     return;
   }
   try {
-    client = new MongoClient(uri);
-    await client.connect();
-    db = client.db('physixam');
-    console.log('✅ Đã kết nối thành công tới MongoDB Atlas!');
+    if (!client) {
+      client = new MongoClient(uri);
+      await client.connect();
+      db = client.db('physixam');
+      console.log('✅ Đã kết nối thành công với MongoDB Atlas');
+    }
   } catch (err) {
     console.error('❌ Lỗi kết nối MongoDB Atlas:', err);
   }
@@ -47,127 +49,68 @@ async function connectToMongo() {
 
 connectToMongo();
 
-// ================= API BÀI NỘP (SUBMISSIONS) =================
-
-// 1. Thêm hoặc cập nhật bài nộp
-app.post('/api/submissions', async (req, res) => {
-  try {
-    const submission = req.body;
-    if (!submission || !submission.id) {
-      return res.status(400).json({ success: false, message: 'Dữ liệu không hợp lệ' });
-    }
-    if (db) {
-      const collection = db.collection('submissions');
-      await collection.updateOne({ id: submission.id }, { $set: submission }, { upsert: true });
-    }
-    res.json({ success: true });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// 2. Lấy danh sách bài nộp
+// API quản lý Submissions (Bài nộp của thí sinh)
 app.get('/api/submissions', async (req, res) => {
   try {
-    if (!db) return res.json({ success: true, submissions: [] });
-    const collection = db.collection('submissions');
-    const submissions = await collection.find({}).sort({ _id: -1 }).limit(100).toArray();
-    res.json({ success: true, submissions });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    if (db) {
+      const list = await db.collection('submissions').find({}).toArray();
+      return res.json(list);
+    }
+    res.json([]);
+  } catch (err) {
+    res.status(500).json({ error: 'Lỗi lấy danh sách bài nộp' });
   }
 });
 
-// 3. Xóa 1 bài nộp theo ID (Bổ sung mới cho Vấn đề 3)
+app.post('/api/submissions', async (req, res) => {
+  try {
+    const sub = req.body;
+    if (db) {
+      await db.collection('submissions').updateOne(
+        { id: sub.id },
+        { $set: sub },
+        { upsert: true }
+      );
+    }
+    res.json({ success: true, submission: sub });
+  } catch (err) {
+    res.status(500).json({ error: 'Lỗi lưu bài nộp' });
+  }
+});
+
+// Xóa 1 bài nộp theo ID (Đã đồng bộ giao diện và database)
 app.delete('/api/submissions/:id', async (req, res) => {
   try {
     const { id } = req.params;
     if (db) {
-      const collection = db.collection('submissions');
-      await collection.deleteOne({ id });
+      await db.collection('submissions').deleteOne({ $or: [{ id }, { _id: id }] });
     }
-    res.json({ success: true });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.json({ success: true, deletedId: id });
+  } catch (err) {
+    res.status(500).json({ error: 'Lỗi xóa bài nộp' });
   }
 });
 
-// 4. Xóa toàn bộ danh sách bài nộp (Bổ sung mới cho Vấn đề 3)
-app.delete('/api/submissions', async (req, res) => {
+// Xóa toàn bộ danh sách bài nộp
+app.delete('/api/submissions/clear-all', async (req, res) => {
   try {
     if (db) {
-      const collection = db.collection('submissions');
-      await collection.deleteMany({});
+      await db.collection('submissions').deleteMany({});
     }
-    res.json({ success: true });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.json({ success: true, message: 'Đã xóa sạch toàn bộ danh sách' });
+  } catch (err) {
+    res.status(500).json({ error: 'Lỗi xóa sạch danh sách' });
   }
 });
 
-// ================= API NGÂN HÀNG ĐỀ THI (EXAM PACKAGES) =================
-app.post('/api/exam-packages', async (req, res) => {
-  try {
-    const pkg = req.body;
-    if (!pkg || !pkg.id) {
-      return res.status(400).json({ success: false, message: 'Dữ liệu gói đề không hợp lệ' });
-    }
-    if (db) {
-      const collection = db.collection('exam_packages');
-      await collection.updateOne({ id: pkg.id }, { $set: pkg }, { upsert: true });
-    }
-    res.json({ success: true });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.get('/api/exam-packages', async (req, res) => {
-  try {
-    if (!db) return res.json({ success: true, packages: [] });
-    const collection = db.collection('exam_packages');
-    const packages = await collection.find({}).toArray();
-    res.json({ success: true, packages });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// ================= API LƯỢT GIAO ĐỀ (ASSIGNMENTS) =================
-app.post('/api/assignments', async (req, res) => {
-  try {
-    const assignment = req.body;
-    if (!assignment || !assignment.id) {
-      return res.status(400).json({ success: false, message: 'Dữ liệu giao bài không hợp lệ' });
-    }
-    if (db) {
-      const collection = db.collection('assignments');
-      await collection.updateOne({ id: assignment.id }, { $set: assignment }, { upsert: true });
-    }
-    res.json({ success: true });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.get('/api/assignments', async (req, res) => {
-  try {
-    if (!db) return res.json({ success: true, assignments: [] });
-    const collection = db.collection('assignments');
-    const assignments = await collection.find({}).sort({ _id: -1 }).toArray();
-    res.json({ success: true, assignments });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// Phục vụ frontend static build
+// Phục vụ các tệp tĩnh từ thư mục build frontend (dist)
 app.use(express.static(path.join(__dirname, 'dist')));
 
+// Điều hướng mọi request khác về index.html của React Router
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-app.listen(port, () => {
-  console.log(`🚀 PhysiXam Server đang chạy tại cổng ${port}`);
+app.listen(Number(port), '0.0.0.0', () => {
+  console.log(`🚀 Server PhysiXam đang chạy tại cổng ${port}`);
 });
