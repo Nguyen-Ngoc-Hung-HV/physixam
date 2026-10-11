@@ -55,6 +55,7 @@ export const ExamResults: React.FC<ExamResultsProps> = ({
     }
   };
 
+  // HÀM XUẤT CSV/EXCEL TƯƠNG THÍCH AN TOÀN TUYỆT ĐỐI VỚI SAFARI (CHỐNG LỖI WEBKITBLOBRESOURCE)
   const handleExportCSV = () => {
     try {
       const headers = ['SBD', 'Họ và tên', 'Lớp', 'Mã đề', 'Điểm số', 'Tỉ lệ', 'Số câu đúng', 'Số lần vi phạm'];
@@ -71,16 +72,23 @@ export const ExamResults: React.FC<ExamResultsProps> = ({
 
       const csvContent = '\uFEFF' + [headers.join(','), row.join(',')].join('\n');
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
+      
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.download = `Ket_Qua_${candidateInfo.candidateNumber || 'ThiSinh'}_${exam.code || '101'}.csv`;
+      
+      // Bắt buộc gắn vào body để Safari trên macOS/iOS nhận diện và thực thi tải xuống
       document.body.appendChild(link);
       link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      
+      // Trì hoãn việc gỡ bỏ phần tử và giải phóng URL để tránh lỗi ngắt kết nối blob của Safari
+      setTimeout(() => {
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      }, 300);
     } catch (e) {
-      alert('Không thể xuất file bảng điểm.');
+      alert('Không thể xuất file bảng điểm do bị trình duyệt Safari chặn.');
     }
   };
 

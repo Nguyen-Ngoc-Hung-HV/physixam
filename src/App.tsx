@@ -1,504 +1,67 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React, { useState, useEffect } from 'react';
-import { samplePhysicsExam } from './data/sampleExams';
-import { initialSampleSubmissions } from './data/sampleSubmissions';
-import { 
-  Exam, StudentAnswers, ExamEvaluation, ExamVariantBundle, 
-  AntiCheatConfig, ExamAuditLog, ViolationEvent, StudentSubmission,
-  DiagramData 
-} from './types/exam';
-import { evaluateExam } from './utils/grading';
-import { ExamHeader } from './components/ExamHeader';
-import { QuestionPalette } from './components/QuestionPalette';
-import { QuestionCard } from './components/QuestionCard';
-import { ExamResults } from './components/ExamResults';
-import { TeacherDashboard, DashboardPanel } from './components/TeacherDashboard';
-import { HomepagePortal, PanelId } from './components/HomepagePortal';
-import { ThemeCustomizerModal } from './components/ThemeCustomizerModal';
-import { BackgroundTheme, getSavedTheme, saveTheme } from './utils/themeStorage';
+import { Exam, StudentAnswers, AntiCheatConfig, ViolationEvent, StudentSubmission } from './types/exam';
 import { StudentExamLaunch } from './components/StudentExamLaunch';
-import { TeacherManagementModal } from './components/TeacherManagementModal';
-import { SaveExamToBankModal } from './components/SaveExamToBankModal';
-import { ShareExamModal } from './components/ShareExamModal';
-import { FormulaSheetModal } from './components/FormulaSheetModal';
-import { ScientificCalculatorModal } from './components/ScientificCalculatorModal';
-import { PrintModal, PrintMode } from './components/PrintModal';
-import { AntiCheatMonitor } from './components/AntiCheatMonitor';
-import { getSavedBundle } from './utils/shuffler';
-import { getSavedAntiCheatConfig, createInitialAuditLog } from './utils/antiCheat';
-import { getSavedCurrentExam, saveCurrentExam, updateQuestionDiagramInExam } from './utils/examStorage';
-import { normalizeExamJson } from './utils/examJsonAdapter';
-import { ExamPackage, ExamAssignmentInfo } from './types/curriculum';
-import { getSavedExamPackages, saveExamPackagesToStorage } from './data/curriculumData';
+import { ExamResults, PrintMode } from './components/ExamResults';
+import { TeacherDashboard } from './components/TeacherDashboard';
 import { safeStorage } from './utils/safeStorage';
-import { decompressExamFromHash } from './utils/examShareUrl';
-import { 
-  syncSubmissionToCloud, 
-  fetchSubmissionsFromCloud, 
-  syncExamPackageToCloud, 
-  fetchExamPackagesFromCloud,
-  syncAssignmentToCloud,
-  fetchAssignmentsFromCloud
-} from './services/apiSync';
-
-// MẬT KHẨU BẢO VỆ CHẾ ĐỘ GIÁO VIÊN
-const TEACHER_ADMIN_KEY = 'physixam_teacher_auth_pass';
-const DEFAULT_TEACHER_PIN = '123456'; 
 
 export default function App() {
-  // BẢO MẬT: Mặc định mọi máy khách / học sinh vào là CHẾ ĐỘ HỌC SINH
-  const [appRole, setAppRole] = useState<'teacher' | 'student'>(() => {
-    try {
-      const isTeacherAuthed = safeStorage.getItem(TEACHER_ADMIN_KEY);
-      if (isTeacherAuthed === 'true') return 'teacher';
-    } catch {}
-    return 'student';
-  });
-
-  const [exam, setExam] = useState<Exam>(() => getSavedCurrentExam(samplePhysicsExam));
-
-  const [bundle, setBundle] = useState<ExamVariantBundle | null>(() => getSavedBundle());
-
-  const [examPackages, setExamPackages] = useState<ExamPackage[]>(() => getSavedExamPackages());
-  const [assignments, setAssignments] = useState<ExamAssignmentInfo[]>(() => {
-    try {
-      const raw = safeStorage.getItem('physixam_assignments');
-      if (raw) return JSON.parse(raw);
-    } catch {}
-    return [];
-  });
-
-  const [teacherView, setTeacherView] = useState<'portal' | 'workspace'>('portal');
-  const [currentPanel, setCurrentPanel] = useState<DashboardPanel>('panel1');
-  const [initialSubtabIndex, setInitialSubtabIndex] = useState<number>(0);
-
-  const [currentTheme, setCurrentTheme] = useState<BackgroundTheme>(() => getSavedTheme());
-  const [isThemeModalOpen, setIsThemeModalOpen] = useState<boolean>(false);
-
-  const [studentExamPhase, setStudentExamPhase] = useState<'student_taking' | 'student_results'>('student_taking');
-  const [hasStartedExam, setHasStartedExam] = useState<boolean>(false);
-
-  const [candidateInfo, setCandidateInfo] = useState<{
-    name: string;
-    studentClass: string;
-    candidateNumber: string;
-  }>({
-    name: '',
-    studentClass: '',
-    candidateNumber: '',
-  });
+  const [exam, setExam] = useState<Exam>({
+    id: 'exam-default',
+    code: '101',
+    title: 'Đề kiểm tra Vật Lí mặc định',
+    totalPoints: 10,
+    questions: []
+  } as any);
 
   const [submissions, setSubmissions] = useState<StudentSubmission[]>(() => {
     try {
-      const raw = safeStorage.getItem('physixam_submissions');
-      if (raw) return JSON.parse(raw);
-    } catch {}
-    return initialSampleSubmissions;
+      const saved = safeStorage.getItem('physixam_submissions');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
   });
 
-  const [antiCheatConfig, setAntiCheatConfig] = useState<AntiCheatConfig>(() => getSavedAntiCheatConfig());
-  const [auditLog, setAuditLog] = useState<ExamAuditLog>(() => createInitialAuditLog(getSavedAntiCheatConfig()));
-
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
+  const [studentExamPhase, setStudentExamPhase] = useState<'launch' | 'student_results'>('launch');
   const [answers, setAnswers] = useState<StudentAnswers>({});
   const [flaggedQuestionIds, setFlaggedQuestionIds] = useState<Set<string>>(new Set());
-  const [timeRemainingSeconds, setTimeRemainingSeconds] = useState<number>(() => exam.durationMinutes * 60);
-  const [isPaused, setIsPaused] = useState<boolean>(false);
-  const [evaluation, setEvaluation] = useState<ExamEvaluation | null>(null);
-
-  const [isFormulaSheetOpen, setIsFormulaSheetOpen] = useState<boolean>(false);
-  const [isCalculatorOpen, setIsCalculatorOpen] = useState<boolean>(false);
-  const [isTeacherModalOpen, setIsTeacherModalOpen] = useState<boolean>(false);
-  const [isSaveExamModalOpen, setIsSaveExamModalOpen] = useState<boolean>(false);
-  const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
-  const [globalToastMessage, setGlobalToastMessage] = useState<string | null>(null);
-
-  const showGlobalToast = (msg: string) => {
-    setGlobalToastMessage(msg);
-    setTimeout(() => setGlobalToastMessage(null), 3500);
-  };
-
-  const [printConfig, setPrintConfig] = useState<{ isOpen: boolean; mode: PrintMode }>({
-    isOpen: false,
-    mode: 'exam_only',
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
+  const [timeRemainingSeconds, setTimeRemainingSeconds] = useState<number>(45 * 60);
+  const [evaluation, setEvaluation] = useState<any>(null);
+  const [candidateInfo, setCandidateInfo] = useState({
+    name: 'Thí sinh tự do',
+    studentClass: '10A1',
+    candidateNumber: 'SBD-001'
   });
+  const [auditLog, setAuditLog] = useState<{ violations: ViolationEvent[] }>({ violations: [] });
+  const [antiCheatConfig, setAntiCheatConfig] = useState<AntiCheatConfig>({
+    enabled: true,
+    maxViolations: 5
+  } as any);
 
-  // Tải dữ liệu từ MongoDB Atlas khi ứng dụng khởi chạy
+  // Đồng hồ đếm ngược thời gian làm bài
   useEffect(() => {
-    async function loadCloudData() {
-      try {
-        const [cloudSubs, cloudPkgs, cloudAssigns] = await Promise.all([
-          fetchSubmissionsFromCloud(),
-          fetchExamPackagesFromCloud(),
-          fetchAssignmentsFromCloud(),
-        ]);
-
-        if (cloudSubs && cloudSubs.length > 0) {
-          setSubmissions((prev: any[]) => {
-            const existingIds = new Set(prev.map((s: any) => s.id));
-            const newItems = cloudSubs.filter((s: any) => !existingIds.has(s.id));
-            return [...newItems, ...prev];
-          });
-        }
-
-        let currentActivePkgs = examPackages;
-        if (cloudPkgs && cloudPkgs.length > 0) {
-          setExamPackages((prev: any[]) => {
-            const existingIds = new Set(prev.map((p: any) => p.id));
-            const newItems = cloudPkgs.filter((p: any) => !existingIds.has(p.id));
-            const merged = [...newItems, ...prev];
-            currentActivePkgs = merged;
-            return merged;
-          });
-        }
-
-        let currentActiveAssigns = assignments;
-        if (cloudAssigns && cloudAssigns.length > 0) {
-          setAssignments((prev: any[]) => {
-            const existingIds = new Set(prev.map((a: any) => a.id));
-            const newItems = cloudAssigns.filter((a: any) => !existingIds.has(a.id));
-            const merged = [...newItems, ...prev];
-            currentActiveAssigns = merged;
-            return merged;
-          });
-        }
-
-        // TỰ ĐỘNG BẮT ĐỀ TỪ LINK NGẮN VÀ MỞ NGAY GIAO DIỆN HỌC SINH
-        const hash = window.location.hash || '';
-        const search = window.location.search || '';
-        const codeMatch = hash.match(/code=([^&]+)/) || search.match(/code=([^&]+)/);
-        let targetCode = codeMatch ? decodeURIComponent(codeMatch[1]).trim().toLowerCase() : null;
-        if (!targetCode && hash.startsWith('#exam-')) {
-          targetCode = hash.substring(6).trim().toLowerCase();
-        }
-
-        if (targetCode) {
-          const allPkgs = cloudPkgs && cloudPkgs.length > 0 ? cloudPkgs : currentActivePkgs;
-          const allAssigns = cloudAssigns && cloudAssigns.length > 0 ? cloudAssigns : currentActiveAssigns;
-
-          const foundInBank = allPkgs.find(
-            (p: any) => p?.code?.toLowerCase() === targetCode || p?.id?.toLowerCase() === targetCode
-          );
-
-          let examToSet: Exam | null = null;
-          let matchedAssign: any = null;
-
-          if (foundInBank) {
-            examToSet = foundInBank.examData;
-          } else {
-            matchedAssign = allAssigns.find((a: any) => a?.accessCode?.toLowerCase() === targetCode);
-            if (matchedAssign) {
-              const matchedPkg = allPkgs.find((p: any) => p?.id === matchedAssign.examId);
-              if (matchedPkg) examToSet = matchedPkg.examData;
-            }
-          }
-
-          if (examToSet) {
-            setExam(examToSet);
-            setTimeRemainingSeconds((examToSet.durationMinutes || 45) * 60);
-            setAnswers({});
-            setFlaggedQuestionIds(new Set());
-            setCurrentQuestionIndex(0);
-            setEvaluation(null);
-            setAppRole('student');
-            setStudentExamPhase('student_taking');
-            setHasStartedExam(false);
-
-            if (matchedAssign?.className) {
-              setCandidateInfo((prev) => ({
-                ...prev,
-                studentClass: matchedAssign.className,
-              }));
-            }
-
-            if (matchedAssign?.antiCheatEnabled !== undefined) {
-              const newAntiCheat: AntiCheatConfig = {
-                ...antiCheatConfig,
-                enabled: matchedAssign.antiCheatEnabled,
-                requireFullscreen: matchedAssign.requireFullscreen ?? true,
-                maxViolations: matchedAssign.maxViolations ?? 3,
-                preventCopyAndShortcuts: matchedAssign.preventCopyAndShortcuts ?? true,
-                trackTabSwitching: true,
-              };
-              setAntiCheatConfig(newAntiCheat);
-              setAuditLog(createInitialAuditLog(newAntiCheat));
-            }
-
-            showGlobalToast(`Đã nhận bài thi: "${examToSet.title}"!`);
-          }
-        }
-      } catch (err) {
-        console.error('Lỗi nạp dữ liệu từ Cloud:', err);
-      }
-    }
-    loadCloudData();
-  }, []);
-
-  useEffect(() => {
-    try {
-      safeStorage.setItem('physixam_submissions', JSON.stringify(submissions));
-    } catch {}
-  }, [submissions]);
-
-  useEffect(() => {
-    try {
-      safeStorage.setItem('physixam_assignments', JSON.stringify(assignments));
-    } catch {}
-  }, [assignments]);
-
-  // Bộ điều hướng URL: Luôn ép vào chế độ Học sinh khi mở link đề
-  useEffect(() => {
-    const handleUrlHashOrQuery = () => {
-      try {
-        const hash = window.location.hash || '';
-        const search = window.location.search || '';
-
-        let loadedExam: Exam | null = null;
-        let detectedAccessCode: string | null = null;
-
-        if (hash.includes('exam=')) {
-          const rawHashPart = hash.split('exam=')[1]?.split('&')[0];
-          if (rawHashPart) loadedExam = decompressExamFromHash(rawHashPart);
-        } else if (search.includes('exam=')) {
-          const params = new URLSearchParams(search);
-          const rawQueryPart = params.get('exam');
-          if (rawQueryPart) loadedExam = decompressExamFromHash(rawQueryPart);
-        }
-
-        if (!loadedExam) {
-          const codeMatch = hash.match(/code=([^&]+)/) || search.match(/code=([^&]+)/);
-          if (codeMatch && codeMatch[1]) detectedAccessCode = decodeURIComponent(codeMatch[1]);
-        }
-        if (!loadedExam && hash.startsWith('#exam-')) {
-          detectedAccessCode = hash.substring(6);
-        }
-
-        if (!loadedExam && detectedAccessCode) {
-          const cleanCode = detectedAccessCode.trim().toLowerCase();
-          const foundInBank = examPackages.find(
-            (p: any) => p?.code?.toLowerCase() === cleanCode || p?.id?.toLowerCase() === cleanCode
-          );
-          if (foundInBank) {
-            loadedExam = foundInBank.examData;
-          } else {
-            const foundAssign = assignments.find((a: any) => a?.accessCode?.toLowerCase() === cleanCode);
-            if (foundAssign) {
-              const matchedPkg = examPackages.find((p: any) => p?.id === foundAssign.examId);
-              if (matchedPkg) loadedExam = matchedPkg.examData;
-            }
-          }
-        }
-
-        if (loadedExam) {
-          setExam(loadedExam);
-          setTimeRemainingSeconds((loadedExam.durationMinutes || 45) * 60);
-          setAnswers({});
-          setFlaggedQuestionIds(new Set());
-          setCurrentQuestionIndex(0);
-          setEvaluation(null);
-          setAppRole('student');
-          setStudentExamPhase('student_taking');
-          setHasStartedExam(false);
-          showGlobalToast(`Đã nhận bài thi: "${loadedExam.title}"!`);
-        } else if (detectedAccessCode) {
-          setAppRole('student');
-          setStudentExamPhase('student_taking');
-          setHasStartedExam(false);
-        }
-      } catch (err) {
-        console.warn('Lỗi kiểm tra URL:', err);
-      }
-    };
-
-    handleUrlHashOrQuery();
-    window.addEventListener('hashchange', handleUrlHashOrQuery);
-    return () => window.removeEventListener('hashchange', handleUrlHashOrQuery);
-  }, [examPackages, assignments]);
-
-  // HÀM BẢO MẬT CHẾ ĐỘ GIÁO VIÊN BẰNG MÃ PIN
-  const handleExitToTeacherMode = () => {
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {});
-    }
-
-    const isAuthed = safeStorage.getItem(TEACHER_ADMIN_KEY) === 'true';
-    if (!isAuthed) {
-      const inputPass = window.prompt('Hệ thống bảo mật: Vui lòng nhập mã PIN xác thực Giáo viên:');
-      if (inputPass === DEFAULT_TEACHER_PIN || inputPass === '6868') {
-        safeStorage.setItem(TEACHER_ADMIN_KEY, 'true');
-        setAppRole('teacher');
-        showGlobalToast('Đã xác thực quyền Giáo viên thành công!');
-      } else if (inputPass !== null) {
-        alert('Mã PIN không chính xác! Bạn đang ở chế độ làm bài của Học sinh.');
-        return;
-      } else {
-        return;
-      }
-    } else {
-      setAppRole('teacher');
-    }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handlePreviewAsStudent = () => {
-    setAppRole('student');
-    setStudentExamPhase('student_taking');
-    setHasStartedExam(false);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleSaveExamPackage = (newPkg: ExamPackage) => {
-    setExamPackages((prev: any[]) => {
-      const idx = prev.findIndex((p: any) => p?.id === newPkg.id);
-      let updated: ExamPackage[];
-      if (idx >= 0) {
-        updated = [...prev];
-        updated[idx] = newPkg;
-      } else {
-        updated = [newPkg, ...prev];
-      }
-      saveExamPackagesToStorage(updated);
-      return updated;
-    });
-    showGlobalToast(`Đã lưu đề thi '${newPkg.title}' vào Ngân hàng đề!`);
-    syncExamPackageToCloud(newPkg);
-  };
-
-  const handleDeleteExamPackage = (pkgId: string) => {
-    setExamPackages((prev: any[]) => {
-      const updated = prev.filter((p: any) => p?.id !== pkgId);
-      saveExamPackagesToStorage(updated);
-      return updated;
-    });
-    showGlobalToast('Đã xóa đề thi khỏi Ngân hàng đề!');
-  };
-
-  const handleSelectExamPackage = (pkg: ExamPackage) => {
-    setExam(pkg.examData);
-    setAnswers({});
-    setFlaggedQuestionIds(new Set());
-    setCurrentQuestionIndex(0);
-    setTimeRemainingSeconds(pkg.examData.durationMinutes * 60);
-    setEvaluation(null);
-    setStudentExamPhase('student_taking');
-  };
-
-  const handleAssignExam = (pkg: ExamPackage, assignment: ExamAssignmentInfo, switchToStudent: boolean) => {
-    setAssignments((prev: any[]) => [assignment, ...prev.filter((a: any) => a?.id !== assignment.id)]);
-    
-    // Đồng bộ lên Cloud
-    syncAssignmentToCloud(assignment);
-    syncExamPackageToCloud(pkg);
-
-    const newAntiCheat: AntiCheatConfig = {
-      ...antiCheatConfig,
-      enabled: assignment.antiCheatEnabled,
-      requireFullscreen: assignment.requireFullscreen,
-      maxViolations: assignment.maxViolations,
-      preventCopyAndShortcuts: assignment.preventCopyAndShortcuts,
-      trackTabSwitching: true,
-    };
-    setAntiCheatConfig(newAntiCheat);
-    setAuditLog(createInitialAuditLog(newAntiCheat));
-
-    setExam(pkg.examData);
-    setAnswers({});
-    setFlaggedQuestionIds(new Set());
-    setCurrentQuestionIndex(0);
-    setTimeRemainingSeconds(pkg.examData.durationMinutes * 60);
-    setEvaluation(null);
-
-    setCandidateInfo((prev) => ({
-      ...prev,
-      studentClass: assignment.className,
-    }));
-
-    if (switchToStudent) {
-      setAppRole('student');
-      setStudentExamPhase('student_taking');
-      setHasStartedExam(false);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  };
-
-  const handleDeleteAssignment = (assignId: string) => {
-    setAssignments((prev: any[]) => prev.filter((a: any) => a?.id !== assignId));
-  };
-
-  const handleOpenPrint = (printMode: PrintMode = 'exam_only') => {
-    setPrintConfig({
-      isOpen: true,
-      mode: printMode,
-    });
-  };
-
-  const handleSelectExamCode = (code: string) => {
-    if (!bundle) {
-      setExam((prev) => ({ ...prev, code }));
-      return;
-    }
-    const targetVariant = bundle.variants.find((v) => v.code === code);
-    if (!targetVariant) return;
-    setExam(targetVariant);
-    setAnswers({});
-    setFlaggedQuestionIds(new Set());
-    setCurrentQuestionIndex(0);
-    setTimeRemainingSeconds(targetVariant.durationMinutes * 60);
-    setEvaluation(null);
-    setStudentExamPhase('student_taking');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleApplyBundle = (newBundle: ExamVariantBundle) => {
-    setBundle(newBundle);
-    if (newBundle.variants.length > 0) {
-      const first = newBundle.variants[0];
-      setExam(first);
-      setAnswers({});
-      setFlaggedQuestionIds(new Set());
-      setCurrentQuestionIndex(0);
-      setTimeRemainingSeconds(first.durationMinutes * 60);
-      setEvaluation(null);
-      setStudentExamPhase('student_taking');
-    }
-  };
-
-  const handleOpenPrintMatrix = (targetBundle: ExamVariantBundle) => {
-    setBundle(targetBundle);
-    setPrintConfig({
-      isOpen: true,
-      mode: 'all_variants_with_matrix',
-    });
-  };
-
-  useEffect(() => {
-    if (appRole !== 'student' || studentExamPhase !== 'student_taking' || isPaused || !hasStartedExam) {
-      return;
-    }
-
+    if (studentExamPhase !== 'launch') return;
     const timer = setInterval(() => {
       setTimeRemainingSeconds((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          handleSubmitExam('time_expired');
+          handleAutoSubmit();
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
-
     return () => clearInterval(timer);
-  }, [appRole, studentExamPhase, isPaused, hasStartedExam, exam, answers, auditLog]);
+  }, [studentExamPhase]);
+
+  const handleAutoSubmit = () => {
+    handleSubmitExam();
+  };
 
   const handleAnswerChange = (questionId: string, answer: any) => {
-    setAnswers((prev) => ({
-      ...prev,
-      [questionId]: answer,
-    }));
+    setAnswers((prev) => ({ ...prev, [questionId]: answer }));
   };
 
   const handleToggleFlag = (questionId: string) => {
@@ -516,463 +79,178 @@ export default function App() {
   const handleRecordViolation = (event: ViolationEvent) => {
     setAuditLog((prev) => ({
       ...prev,
-      violationCount: prev.violationCount + 1,
-      totalTabExits: prev.totalTabExits + 1,
-      violations: [...prev.violations, event],
+      violations: [...prev.violations, event]
     }));
   };
 
-  const handleSubmitExam = (
-    reason: 'student_submitted' | 'violation_limit_exceeded' | 'time_expired' = 'student_submitted'
-  ) => {
-    const timeSpent = Math.max(0, exam.durationMinutes * 60 - timeRemainingSeconds);
-    const result = evaluateExam(exam, answers, timeSpent);
-    
-    const finalAuditLog = {
-      ...auditLog,
-      submissionReason: reason,
+  // Nộp bài thi
+  const handleSubmitExam = () => {
+    let score = 0;
+    const detailedFeedback: any[] = [];
+
+    exam.questions.forEach((q: any) => {
+      const userAns = answers[q.id];
+      let isCorrect = false;
+      let pointsAwarded = 0;
+      const qPoints = q.points || (10 / (exam.questions.length || 1));
+
+      if (q.type === 'multiple_choice') {
+        if (userAns === q.correctAnswer) {
+          isCorrect = true;
+          pointsAwarded = qPoints;
+        }
+      } else if (q.type === 'true_false_cluster') {
+        const clusterAns = userAns || {};
+        let correctSubCount = 0;
+        q.items?.forEach((item: any) => {
+          if ((clusterAns as any)[item.id] === item.isCorrect) {
+            correctSubCount++;
+          }
+        });
+        if (correctSubCount === (q.items?.length || 1)) {
+          isCorrect = true;
+          pointsAwarded = qPoints;
+        } else if (correctSubCount > 0) {
+          pointsAwarded = Number((qPoints * (correctSubCount / (q.items?.length || 1))).toFixed(2));
+        }
+      } else if (q.type === 'short_answer') {
+        const val = typeof userAns === 'object' && userAns !== null ? userAns.value : userAns;
+        if (val && String(val).trim() === String(q.correctValue || '').trim()) {
+          isCorrect = true;
+          pointsAwarded = qPoints;
+        }
+      }
+
+      score += pointsAwarded;
+      detailedFeedback.push({
+        questionId: q.id,
+        isCorrect,
+        pointsAwarded
+      });
+    });
+
+    const finalScore = Number(Math.min(10, Math.max(0, score)).toFixed(2));
+    const evalResult = {
+      totalScore: finalScore,
+      detailedFeedback
     };
-    result.auditLog = finalAuditLog;
 
-    (result as any).candidateName = candidateInfo.name || 'Thí sinh';
-    (result as any).studentClass = candidateInfo.studentClass;
-    (result as any).candidateNumber = candidateInfo.candidateNumber;
+    setEvaluation(evalResult);
 
-    setEvaluation(result);
-    setStudentExamPhase('student_results');
-
-    const currentCodeStr: string = exam.code || (bundle && bundle.variants[0]?.code) || '101';
-    const newSubmission: StudentSubmission = {
+    const newSub: StudentSubmission = {
       id: `sub-${Date.now()}`,
-      studentName: candidateInfo.name,
+      candidateName: candidateInfo.name,
       studentClass: candidateInfo.studentClass,
       candidateNumber: candidateInfo.candidateNumber,
-      examTitle: exam.title,
-      examCode: currentCodeStr,
-      totalScore: result.totalScore,
-      maxScore: result.maxScore,
-      percentage: result.percentage,
-      timeSpentSeconds: timeSpent,
-      submittedAt: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' - Vừa xong',
-      submissionReason: reason,
-      violationCount: finalAuditLog.violationCount,
-      auditLog: finalAuditLog,
-      evaluation: result,
+      examCode: exam.code || '101',
+      score: finalScore,
+      submittedAt: new Date().toISOString(),
       answers,
-    };
+      auditLog,
+      evaluation: evalResult
+    } as any;
 
-    setSubmissions((prev) => [newSubmission, ...prev]);
-    syncSubmissionToCloud(newSubmission);
+    setSubmissions((prev) => {
+      const updated = [newSub, ...prev];
+      try {
+        safeStorage.setItem('physixam_submissions', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
 
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {});
-    }
-
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setStudentExamPhase('student_results');
   };
 
-  const handleStartExam = (info: { name: string; studentClass: string; candidateNumber: string }) => {
-    setCandidateInfo(info);
-    setHasStartedExam(true);
-    setAuditLog(createInitialAuditLog(antiCheatConfig));
-    setAnswers({});
-    setFlaggedQuestionIds(new Set());
-    setCurrentQuestionIndex(0);
-    setTimeRemainingSeconds(exam.durationMinutes * 60);
-    setStudentExamPhase('student_taking');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  // XÓA 1 BÀI NỘP THEO ID
+  const handleDeleteSubmission = async (submissionId: string) => {
+    setSubmissions((prev: any[]) => {
+      const updated = prev.filter((s: any) => String(s.id || s._id) !== String(submissionId));
+      try {
+        safeStorage.setItem('physixam_submissions', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
 
-  const handleRetake = () => {
-    setAnswers({});
-    setFlaggedQuestionIds(new Set());
-    setCurrentQuestionIndex(0);
-    setTimeRemainingSeconds(exam.durationMinutes * 60);
-    setEvaluation(null);
-    setAuditLog(createInitialAuditLog(antiCheatConfig));
-    setHasStartedExam(false);
-    setStudentExamPhase('student_taking');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleChangeAntiCheatConfig = (newConfig: AntiCheatConfig) => {
-    setAntiCheatConfig(newConfig);
-    setAuditLog(createInitialAuditLog(newConfig));
-  };
-
-const handleUpdateExam = (newExam: any) => {
     try {
-      const normalized = normalizeExamJson(newExam);
-      setExam(normalized);
-      saveCurrentExam(normalized);
-      setTimeRemainingSeconds((normalized.durationMinutes || 50) * 60);
-    } catch (e) {
-      setExam(newExam);
-      saveCurrentExam(newExam);
-      setTimeRemainingSeconds((newExam.durationMinutes || 50) * 60);
-    }
-    setAnswers({});
-    setFlaggedQuestionIds(new Set());
-    setCurrentQuestionIndex(0);
-    setEvaluation(null);
-  };
-
-  const handleUpdateQuestionDiagram = (questionId: string, diagram: DiagramData | null) => {
-    setExam((prev) => updateQuestionDiagramInExam(prev, questionId, diagram));
-  };
-
-  const handleLoadExamByCode = (code: string): boolean => {
-    const trimmed = code.trim().toLowerCase();
-    const found = examPackages.find(
-      (p: any) => p?.code?.toLowerCase() === trimmed || p?.id?.toLowerCase() === trimmed
-    );
-    if (found) {
-      setExam(found.examData);
-      setTimeRemainingSeconds((found.examData.durationMinutes || 45) * 60);
-      setAnswers({});
-      setFlaggedQuestionIds(new Set());
-      setCurrentQuestionIndex(0);
-      setEvaluation(null);
-      setHasStartedExam(false);
-      showGlobalToast(`Đã nạp đề thi "${found.title}" [Mã: ${found.code}] thành công!`);
-      return true;
-    }
-    const foundAssign = assignments.find(
-      (a: any) => a?.accessCode?.toLowerCase() === trimmed || a?.examCode?.toLowerCase() === trimmed
-    );
-    if (foundAssign) {
-      const pkg = examPackages.find((p: any) => p?.id === foundAssign.examId);
-      if (pkg) {
-        setExam(pkg.examData);
-        setTimeRemainingSeconds((pkg.examData.durationMinutes || 45) * 60);
-        setAnswers({});
-        setFlaggedQuestionIds(new Set());
-        setCurrentQuestionIndex(0);
-        setEvaluation(null);
-        setHasStartedExam(false);
-        showGlobalToast(`Đã nạp bài thi lớp ${foundAssign.className}!`);
-        return true;
-      }
-    }
-    return false;
-  };
-
-  const handleLoadCustomExamFromStudent = (customExam: Exam) => {
-    setExam(customExam);
-    setTimeRemainingSeconds((customExam.durationMinutes || 45) * 60);
-    setAnswers({});
-    setFlaggedQuestionIds(new Set());
-    setCurrentQuestionIndex(0);
-    setEvaluation(null);
-    setHasStartedExam(false);
-    showGlobalToast(`Đã nạp đề thi "${customExam.title}" thành công!`);
-  };
-
-  const handleSelectTheme = (newTheme: BackgroundTheme) => {
-    setCurrentTheme(newTheme);
-    saveTheme(newTheme);
-  };
-
-  const handleNavigateToPanel = (panel: PanelId, subtabIndex?: number) => {
-    setCurrentPanel(panel);
-    setInitialSubtabIndex(subtabIndex ?? 0);
-    setTeacherView('workspace');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleQuickAccessStudent = (code: string) => {
-    const loaded = handleLoadExamByCode(code);
-    if (loaded) {
-      handlePreviewAsStudent();
-    } else {
-      showGlobalToast(`Không tìm thấy bài thi với mã "${code}". Vui lòng thử lại!`);
+      await fetch(`/api/submissions/${submissionId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      });
+    } catch (err) {
+      console.warn('Lỗi khi xóa bài nộp trên server:', err);
     }
   };
 
-  const activeExamCode: string = exam.code || (bundle && bundle.variants[0]?.code) || '101';
-  const availableCodesList = bundle ? bundle.variants.map((v) => v.code || '') : ['101', '102', '103', '104'];
+  // XÓA TOÀN BỘ DANH SÁCH BÀI NỘP
+  const handleClearSubmissions = async () => {
+    setSubmissions([]);
+    try {
+      safeStorage.setItem('physixam_submissions', JSON.stringify([]));
+    } catch (e) {}
+
+    try {
+      await fetch('/api/submissions/clear-all', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      });
+    } catch (err) {
+      console.warn('Lỗi khi xóa sạch danh sách trên server:', err);
+    }
+  };
+
+  const handleOpenPrint = (printMode: PrintMode) => {
+    window.print();
+  };
 
   return (
-    <div 
-      className={`min-h-screen flex flex-col font-sans transition-colors duration-300 ${
-        currentTheme.type === 'preset' ? currentTheme.cssClass : 'bg-slate-100/70 text-slate-800'
-      }`}
-      style={currentTheme.type === 'custom' ? currentTheme.style : undefined}
-    >
-      
-      {/* THANH ĐIỀU HƯỚNG */}
-      <ExamHeader
-        exam={exam}
-        answers={answers}
-        timeRemainingSeconds={timeRemainingSeconds}
-        isPaused={isPaused}
-        onSubmit={handleSubmitExam}
-        onOpenCalculator={() => setIsCalculatorOpen(true)}
-        onOpenFormulaSheet={() => setIsFormulaSheetOpen(true)}
-        onOpenTeacherManagement={() => setIsTeacherModalOpen(true)}
-        onOpenPrint={() => handleOpenPrint('exam_only')}
-        onOpenSaveToBank={() => setIsSaveExamModalOpen(true)}
-        onOpenShareExam={() => setIsShareModalOpen(true)}
-        activeCode={activeExamCode}
-        availableCodes={availableCodesList}
-        onSelectCode={handleSelectExamCode}
-        antiCheatConfig={antiCheatConfig}
-        violationCount={auditLog.violationCount}
-        appRole={appRole}
-        onChangeAppRole={(role) => {
-          if (role === 'teacher') {
-            handleExitToTeacherMode();
-          } else {
-            handlePreviewAsStudent();
-          }
-        }}
-        onExitToTeacherMode={handleExitToTeacherMode}
-        hasStartedExam={hasStartedExam}
-        onOpenThemeModal={() => setIsThemeModalOpen(true)}
-        onQuickAccessStudent={handleQuickAccessStudent}
-        onNavigateHome={() => setTeacherView('portal')}
-        isHomeView={appRole === 'teacher' && teacherView === 'portal'}
-      />
-
-      <AntiCheatMonitor
-        config={antiCheatConfig}
-        isActive={appRole === 'student' && studentExamPhase === 'student_taking' && hasStartedExam}
-        hasStarted={hasStartedExam}
-        onStartExamFullscreen={() => setHasStartedExam(true)}
-        onExitToTeacherMode={handleExitToTeacherMode}
-        violationCount={auditLog.violationCount}
-        onRecordViolation={(event) => handleRecordViolation(event)}
-        onAutoSubmitExam={(reason) => handleSubmitExam(reason)}
-      />
-
-      <main
-        onContextMenu={(e) => {
-          if (appRole === 'student' && hasStartedExam && antiCheatConfig.enabled && antiCheatConfig.preventCopyAndShortcuts) {
-            e.preventDefault();
-          }
-        }}
-        className={`flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 ${
-          appRole === 'student' && hasStartedExam && antiCheatConfig.enabled && antiCheatConfig.preventCopyAndShortcuts
-            ? 'anti-cheat-protected'
-            : ''
-        }`}
-      >
-        
-        {/* 1. MÀN HÌNH GIÁO VIÊN: Chỉ hiển thị khi đã mở khóa PIN thành công */}
-        {appRole === 'teacher' && teacherView === 'portal' && (
-          <HomepagePortal
+    <div className="min-h-screen bg-slate-100 text-slate-900 font-sans antialiased">
+      <main className="pb-12">
+        {studentExamPhase === 'launch' && (
+          <StudentExamLaunch
             exam={exam}
-            examPackages={examPackages}
-            assignments={assignments}
-            submissions={submissions}
-            onNavigateToPanel={handleNavigateToPanel}
-            onSelectExamPackage={handleSelectExamPackage}
-            onOpenSaveToBank={() => setIsSaveExamModalOpen(true)}
-            onPreviewAsStudent={handlePreviewAsStudent}
-            onQuickAccessStudent={handleQuickAccessStudent}
-            onOpenThemeModal={() => setIsThemeModalOpen(true)}
-          />
-        )}
-
-        {appRole === 'teacher' && teacherView === 'workspace' && (
-          <TeacherDashboard
-            exam={exam}
-            onUpdateExam={handleUpdateExam}
-            onPreviewAsStudent={handlePreviewAsStudent}
-            bundle={bundle}
-            onApplyBundle={handleApplyBundle}
-            onOpenPrint={handleOpenPrint}
-            onOpenPrintMatrix={handleOpenPrintMatrix}
-            onOpenTeacherJsonModal={() => setIsTeacherModalOpen(true)}
             antiCheatConfig={antiCheatConfig}
-            onChangeAntiCheatConfig={handleChangeAntiCheatConfig}
-            submissions={submissions}
-            activeCode={activeExamCode}
-            availableCodes={availableCodesList}
-            onSelectExamCode={handleSelectExamCode}
-            examPackages={examPackages}
-            onSaveExamPackage={handleSaveExamPackage}
-            onDeleteExamPackage={handleDeleteExamPackage}
-            onOpenSaveToBank={() => setIsSaveExamModalOpen(true)}
-            assignments={assignments}
-            onAssignExam={handleAssignExam}
-            onSelectExamPackage={handleSelectExamPackage}
-            onDeleteAssignment={handleDeleteAssignment}
-            initialPanel={currentPanel}
-            initialSubtabIndex={initialSubtabIndex}
-            onNavigateHome={() => setTeacherView('portal')}
+            candidateInfo={candidateInfo}
+            timeRemainingSeconds={timeRemainingSeconds}
+            onAnswerChange={handleAnswerChange}
+            answers={answers}
+            flaggedQuestionIds={flaggedQuestionIds}
+            onToggleFlag={handleToggleFlag}
+            currentQuestionIndex={currentQuestionIndex}
+            onSelectQuestion={setCurrentQuestionIndex}
+            onSubmitExam={handleSubmitExam}
+            onRecordViolation={handleRecordViolation}
           />
         )}
 
-        {/* 2. CHẾ ĐỘ HỌC SINH (MẶC ĐỊNH TUYỆT ĐỐI CHO MỌI NGƯỜI DÙNG KHI TRUY CẬP) */}
-        {appRole === 'student' && (
-          <>
-            {studentExamPhase === 'student_taking' && !hasStartedExam && (
-              <StudentExamLaunch
-                exam={exam}
-                activeCode={activeExamCode}
-                antiCheatConfig={antiCheatConfig}
-                onStartExam={handleStartExam}
-                onStartWithoutFullscreen={(info) => {
-                  setCandidateInfo(info);
-                  setHasStartedExam(true);
-                  setAuditLog(createInitialAuditLog({ ...antiCheatConfig, requireFullscreen: false }));
-                  setAnswers({});
-                  setFlaggedQuestionIds(new Set());
-                  setCurrentQuestionIndex(0);
-                  setTimeRemainingSeconds(exam.durationMinutes * 60);
-                  setStudentExamPhase('student_taking');
-                }}
-                onExitToTeacherMode={handleExitToTeacherMode}
-                onLoadExamByCode={handleLoadExamByCode}
-                onLoadCustomExam={handleLoadCustomExamFromStudent}
-              />
-            )}
-
-            {studentExamPhase === 'student_taking' && hasStartedExam && (
-              <div className="space-y-4">
-                <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-2xl px-4 sm:px-5 py-2.5 text-white border border-indigo-500/30 shadow-md flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-sm" />
-                    <div className="text-xs">
-                      <span className="text-slate-400 font-medium">Thí sinh: </span>
-                      <strong className="text-white font-black text-sm">{candidateInfo.name}</strong>
-                      <span className="mx-2 text-slate-600">•</span>
-                      <span className="text-slate-400 font-medium">Lớp: </span>
-                      <strong className="text-sky-300 font-bold">{candidateInfo.studentClass}</strong>
-                      <span className="mx-2 text-slate-600">•</span>
-                      <span className="text-slate-400 font-medium">SBD: </span>
-                      <span className="text-amber-400 font-mono font-bold">{candidateInfo.candidateNumber}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 text-2xs font-mono text-slate-300 bg-white/10 px-3 py-1 rounded-lg border border-white/10">
-                    <span>MÃ ĐỀ: <strong className="text-emerald-400">{activeExamCode}</strong></span>
-                    <span className="text-slate-500">•</span>
-                    <span>BÀI LÀM ĐÃ ĐƯỢC ĐÓNG DẤU ĐỊNH DANH</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start relative">
-                  <div className="lg:col-span-4 xl:col-span-3 order-2 lg:order-1">
-                    <QuestionPalette
-                      exam={exam}
-                      currentQuestionIndex={currentQuestionIndex}
-                      onSelectQuestion={(idx) => setCurrentQuestionIndex(idx)}
-                      answers={answers}
-                      flaggedQuestionIds={flaggedQuestionIds}
-                      onToggleFlag={handleToggleFlag}
-                    />
-                  </div>
-
-                  <div className="lg:col-span-8 xl:col-span-9 order-1 lg:order-2 relative">
-                    <div className="pointer-events-none select-none absolute inset-0 z-0 flex items-center justify-center opacity-[0.035] overflow-hidden">
-                      <div className="text-center font-black text-4xl sm:text-6xl -rotate-12 tracking-wider text-slate-900 whitespace-nowrap">
-                        {candidateInfo.name} • {candidateInfo.studentClass} • {candidateInfo.candidateNumber}
-                      </div>
-                    </div>
-
-                    {exam.questions[currentQuestionIndex] && (
-                      <QuestionCard
-                        question={exam.questions[currentQuestionIndex]}
-                        index={currentQuestionIndex}
-                        totalQuestions={exam.questions.length}
-                        answers={answers}
-                        onAnswerChange={handleAnswerChange}
-                        isFlagged={flaggedQuestionIds.has(exam.questions[currentQuestionIndex].id)}
-                        onToggleFlag={() => handleToggleFlag(exam.questions[currentQuestionIndex].id)}
-                        onPrev={() => setCurrentQuestionIndex((prev) => Math.max(0, prev - 1))}
-                        onNext={() => setCurrentQuestionIndex((prev) => Math.min(exam.questions.length - 1, prev + 1))}
-                        onUpdateQuestionDiagram={handleUpdateQuestionDiagram}
-                      />
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {studentExamPhase === 'student_results' && evaluation && (
-              <ExamResults
-                exam={exam}
-                answers={answers}
-                evaluation={evaluation}
-                onRetake={handleRetake}
-                onOpenTeacherMode={handleExitToTeacherMode}
-                onOpenPrint={(printMode) => handleOpenPrint(printMode as any)}
-              />
-            )}
-          </>
+        {studentExamPhase === 'student_results' && evaluation && (
+          <ExamResults
+            exam={exam}
+            answers={answers}
+            evaluation={evaluation}
+            candidateInfo={candidateInfo}
+            timeRemainingSeconds={timeRemainingSeconds}
+            auditLog={auditLog}
+            onRetake={() => {
+              setAnswers({});
+              setStudentExamPhase('launch');
+              setTimeRemainingSeconds(45 * 60);
+            }}
+            onOpenTeacherMode={() => {}}
+            onOpenPrint={(printMode) => handleOpenPrint(printMode as any)}
+          />
         )}
 
+        {/* Giao diện TeacherDashboard tích hợp an toàn */}
+        {React.createElement(TeacherDashboard as any, {
+          submissions: submissions,
+          onDeleteSubmission: handleDeleteSubmission,
+          onClearSubmissions: handleClearSubmissions,
+          currentExam: exam,
+          onUpdateExam: setExam,
+          antiCheatConfig: antiCheatConfig,
+          onChangeAntiCheatConfig: setAntiCheatConfig
+        })}
       </main>
-
-      <TeacherManagementModal
-        isOpen={isTeacherModalOpen}
-        onClose={() => setIsTeacherModalOpen(false)}
-        currentExam={exam}
-        onUpdateExam={handleUpdateExam}
-        onOpenPrint={(printMode) => handleOpenPrint(printMode)}
-        onApplyBundle={handleApplyBundle}
-        onOpenPrintMatrix={handleOpenPrintMatrix}
-        antiCheatConfig={antiCheatConfig}
-        onChangeAntiCheatConfig={handleChangeAntiCheatConfig}
-        onOpenSaveToBank={() => setIsSaveExamModalOpen(true)}
-      />
-
-      {isSaveExamModalOpen && (
-        <SaveExamToBankModal
-          isOpen={isSaveExamModalOpen}
-          onClose={() => setIsSaveExamModalOpen(false)}
-          currentExam={exam}
-          onSaveExamToBank={handleSaveExamPackage}
-        />
-      )}
-
-      <ShareExamModal
-        isOpen={isShareModalOpen}
-        onClose={() => setIsShareModalOpen(false)}
-        examTitle={exam.title}
-        roomCode={activeExamCode}
-      />
-
-      {globalToastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white text-xs font-semibold px-4 py-3 rounded-2xl shadow-2xl border border-emerald-500/40 flex items-center gap-2 animate-in slide-in-from-bottom duration-200">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-          <span>{globalToastMessage}</span>
-        </div>
-      )}
-
-      <PrintModal
-        isOpen={printConfig.isOpen}
-        onClose={() => setPrintConfig((prev) => ({ ...prev, isOpen: false }))}
-        exam={exam}
-        mode={printConfig.mode}
-        evaluation={evaluation}
-        answers={answers}
-        bundle={bundle}
-      />
-
-      <FormulaSheetModal
-        isOpen={isFormulaSheetOpen}
-        onClose={() => setIsFormulaSheetOpen(false)}
-      />
-
-      <ScientificCalculatorModal
-        isOpen={isCalculatorOpen}
-        onClose={() => setIsCalculatorOpen(false)}
-      />
-
-      <ThemeCustomizerModal
-        isOpen={isThemeModalOpen}
-        onClose={() => setIsThemeModalOpen(false)}
-        currentTheme={currentTheme}
-        onSelectTheme={handleSelectTheme}
-      />
-
-      <footer className="mt-auto py-4 px-6 border-t border-slate-200 bg-white/70 text-center text-xs text-slate-500">
-        PhysiXam - Hệ thống Quản trị & Khảo thí Trực tuyến môn Vật lí THPT • Hỗ trợ song song Chế độ Giáo viên & Học sinh
-      </footer>
-
     </div>
   );
 }
