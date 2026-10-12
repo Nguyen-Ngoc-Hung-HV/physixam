@@ -5,14 +5,43 @@ import { ExamResults, PrintMode } from './components/ExamResults';
 import { TeacherDashboard } from './components/TeacherDashboard';
 import { safeStorage } from './utils/safeStorage';
 
+const DEFAULT_EXAM: any = {
+  id: 'exam-101',
+  code: '101',
+  title: 'Khảo thí Vật lí 10 - Đề số 1',
+  durationMinutes: 45,
+  totalPoints: 10,
+  questions: [
+    {
+      id: 'q-demo-1',
+      code: 'C01',
+      type: 'multiple_choice',
+      prompt: 'Một vật chuyển động thẳng đều với vận tốc $v = 5\\text{ m/s}$. Quãng đường vật đi được trong thời gian $t = 4\\text{ s}$ là',
+      options: [
+        { id: 'opt-A', label: 'A', text: '$20\\text{ m}$' },
+        { id: 'opt-B', label: 'B', text: '$10\\text{ m}$' },
+        { id: 'opt-C', label: 'C', text: '$15\\text{ m}$' },
+        { id: 'opt-D', label: 'D', text: '$25\\text{ m}$' }
+      ],
+      correctAnswer: 'opt-A',
+      points: 2.5
+    }
+  ]
+};
+
 export default function App() {
-  const [exam, setExam] = useState<Exam>({
-    id: 'exam-default',
-    code: '101',
-    title: 'Đề kiểm tra Vật Lí mặc định',
-    totalPoints: 10,
-    questions: []
-  } as any);
+  const [exam, setExam] = useState<Exam>(() => {
+    try {
+      const saved = safeStorage.getItem('physixam_current_exam');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {}
+    return DEFAULT_EXAM;
+  });
 
   const [submissions, setSubmissions] = useState<StudentSubmission[]>(() => {
     try {
@@ -40,14 +69,13 @@ export default function App() {
     maxViolations: 5
   } as any);
 
-  // Đồng hồ đếm ngược thời gian làm bài
   useEffect(() => {
     if (studentExamPhase !== 'launch') return;
     const timer = setInterval(() => {
       setTimeRemainingSeconds((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          handleAutoSubmit();
+          handleSubmitExam();
           return 0;
         }
         return prev - 1;
@@ -55,10 +83,6 @@ export default function App() {
     }, 1000);
     return () => clearInterval(timer);
   }, [studentExamPhase]);
-
-  const handleAutoSubmit = () => {
-    handleSubmitExam();
-  };
 
   const handleAnswerChange = (questionId: string, answer: any) => {
     setAnswers((prev) => ({ ...prev, [questionId]: answer }));
@@ -83,16 +107,16 @@ export default function App() {
     }));
   };
 
-  // Nộp bài thi
   const handleSubmitExam = () => {
     let score = 0;
     const detailedFeedback: any[] = [];
+    const questionsList = exam?.questions || [];
 
-    exam.questions.forEach((q: any) => {
+    questionsList.forEach((q: any) => {
       const userAns = answers[q.id];
       let isCorrect = false;
       let pointsAwarded = 0;
-      const qPoints = q.points || (10 / (exam.questions.length || 1));
+      const qPoints = q.points || (10 / (questionsList.length || 1));
 
       if (q.type === 'multiple_choice') {
         if (userAns === q.correctAnswer) {
@@ -161,7 +185,6 @@ export default function App() {
     setStudentExamPhase('student_results');
   };
 
-  // XÓA 1 BÀI NỘP THEO ID
   const handleDeleteSubmission = async (submissionId: string) => {
     setSubmissions((prev: any[]) => {
       const updated = prev.filter((s: any) => String(s.id || s._id) !== String(submissionId));
@@ -181,7 +204,6 @@ export default function App() {
     }
   };
 
-  // XÓA TOÀN BỘ DANH SÁCH BÀI NỘP
   const handleClearSubmissions = async () => {
     setSubmissions([]);
     try {
@@ -201,6 +223,14 @@ export default function App() {
   const handleOpenPrint = (printMode: PrintMode) => {
     window.print();
   };
+
+  if (!exam || !exam.questions || exam.questions.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-600 font-medium">
+        Đang khởi tạo dữ liệu đề thi...
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 font-sans antialiased">
@@ -240,13 +270,17 @@ export default function App() {
           />
         )}
 
-        {/* Giao diện TeacherDashboard tích hợp an toàn */}
         {React.createElement(TeacherDashboard as any, {
           submissions: submissions,
           onDeleteSubmission: handleDeleteSubmission,
           onClearSubmissions: handleClearSubmissions,
           currentExam: exam,
-          onUpdateExam: setExam,
+          onUpdateExam: (newExam: any) => {
+            setExam(newExam);
+            try {
+              safeStorage.setItem('physixam_current_exam', JSON.stringify(newExam));
+            } catch (e) {}
+          },
           antiCheatConfig: antiCheatConfig,
           onChangeAntiCheatConfig: setAntiCheatConfig
         })}
