@@ -172,14 +172,14 @@ export const StudentExamLaunch: React.FC<StudentExamLaunchProps> = ({
                 </button>
               </div>
 
-              {/* Tương thích linh hoạt props của QuestionCard */}
+              {/* Tương thích linh hoạt props của QuestionCard an toàn */}
               {React.createElement(QuestionCard as any, {
                 question: currentQuestion,
-                answer: answers[currentQuestion.id],
-                userAnswer: answers[currentQuestion.id],
-                currentAnswer: answers[currentQuestion.id],
-                selectedAnswer: answers[currentQuestion.id],
-                onAnswerChange: (val: any) => onAnswerChange(currentQuestion.id, val)
+                answer: (answers && currentQuestion?.id ? answers[currentQuestion.id] : undefined) || '',
+                userAnswer: (answers && currentQuestion?.id ? answers[currentQuestion.id] : undefined) || '',
+                currentAnswer: (answers && currentQuestion?.id ? answers[currentQuestion.id] : undefined) || '',
+                selectedAnswer: (answers && currentQuestion?.id ? answers[currentQuestion.id] : undefined) || '',
+                onAnswerChange: (val: any) => currentQuestion?.id && onAnswerChange(currentQuestion.id, val)
               })}
 
               <div className="flex items-center justify-between mt-8 pt-4 border-t border-slate-100">

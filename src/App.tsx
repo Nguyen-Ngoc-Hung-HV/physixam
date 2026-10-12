@@ -8,7 +8,7 @@ import { safeStorage } from './utils/safeStorage';
 const DEFAULT_EXAM: any = {
   id: 'exam-101',
   code: '101',
-  title: 'Khảo thí Vật lí 10 - Đề số 1',
+  title: 'Khảo thí Vật lí 10 - Ôn tập Chuyển động thẳng',
   durationMinutes: 45,
   totalPoints: 10,
   questions: [
@@ -24,6 +24,22 @@ const DEFAULT_EXAM: any = {
         { id: 'opt-D', label: 'D', text: '$25\\text{ m}$' }
       ],
       correctAnswer: 'opt-A',
+      explanation: 'Áp dụng công thức $s = v \\cdot t = 5 \\cdot 4 = 20\\text{ m}$.',
+      points: 2.5
+    },
+    {
+      id: 'q-demo-2',
+      code: 'C02',
+      type: 'multiple_choice',
+      prompt: 'Đơn vị đo của gia tốc trong hệ SI là',
+      options: [
+        { id: 'opt-2A', label: 'A', text: '$\\text{m/s}^2$' },
+        { id: 'opt-2B', label: 'B', text: '$\\text{m/s}$' },
+        { id: 'opt-2C', label: 'C', text: '$\\text{km/h}$' },
+        { id: 'opt-2D', label: 'D', text: '$\\text{m}\\cdot\\text{s}$' }
+      ],
+      correctAnswer: 'opt-2A',
+      explanation: 'Đơn vị chuẩn của gia tốc trong hệ SI là mét trên giây bình phương ($\\text{m/s}^2$).',
       points: 2.5
     }
   ]
@@ -53,7 +69,7 @@ export default function App() {
   });
 
   const [studentExamPhase, setStudentExamPhase] = useState<'launch' | 'student_results'>('launch');
-  const [answers, setAnswers] = useState<StudentAnswers>({});
+  const [answers, setAnswers] = useState<StudentAnswers>(() => ({}));
   const [flaggedQuestionIds, setFlaggedQuestionIds] = useState<Set<string>>(new Set());
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
   const [timeRemainingSeconds, setTimeRemainingSeconds] = useState<number>(45 * 60);
